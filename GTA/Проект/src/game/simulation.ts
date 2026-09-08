@@ -80,9 +80,8 @@ export class Simulation implements SimulationApi {
 
   private footBlocked(x: number, z: number, ignoreVehicle?: string, radius = FOOT_RADIUS, ignoreOfficer?: string): boolean {
     if (Math.abs(x) + radius > this.world.size / 2 - 1 || Math.abs(z) + radius > this.world.size / 2 - 1) return true;
-    for (const solid of [...this.world.buildings, ...this.world.obstacles]) {
-      if (circleIntersectsBox(x, z, radius, solid)) return true;
-    }
+    for (const solid of this.world.buildings) if (circleIntersectsBox(x, z, radius, solid)) return true;
+    for (const solid of this.world.obstacles) if (circleIntersectsBox(x, z, radius, solid)) return true;
     if (this.state.vehicles.some(v => v.active && v.id !== ignoreVehicle && circleIntersectsBox(x, z, radius, v))) return true;
     return this.state.officers.some(officer => officer.id !== ignoreOfficer && officer.state !== 'riding' && officer.state !== 'dead' && dist({ x, z }, officer) < radius + 0.38);
   }
@@ -93,7 +92,8 @@ export class Simulation implements SimulationApi {
     const extentX = Math.abs(Math.cos(yaw)) * car.width / 2 + Math.abs(Math.sin(yaw)) * car.depth / 2;
     const extentZ = Math.abs(Math.sin(yaw)) * car.width / 2 + Math.abs(Math.cos(yaw)) * car.depth / 2;
     if (Math.abs(x) + extentX > this.world.size / 2 - 1 || Math.abs(z) + extentZ > this.world.size / 2 - 1) return 'boundary';
-    for (const solid of [...this.world.buildings, ...this.world.obstacles]) if (boxIntersects(test, solid, 0.035)) return solid.id;
+    for (const solid of this.world.buildings) if (boxIntersects(test, solid, 0.035)) return solid.id;
+    for (const solid of this.world.obstacles) if (boxIntersects(test, solid, 0.035)) return solid.id;
     for (const other of this.state.vehicles) {
       if (other.active && other.id !== car.id && boxIntersects(test, other, 0.035)) return other.id;
     }
@@ -234,7 +234,7 @@ export class Simulation implements SimulationApi {
     for (const p of this.state.pedestrians) {
       if (p.state === 'dead') continue;
       p.phase += dt * (p.state === 'fleeing' ? 13 : 6);
-      const danger = this.state.vehicles.find(v => v.active && Math.abs(v.speed) > 4 && dist(v, p) < 7);
+      const danger = this.state.vehicles.find(v => v.active && Math.abs(v.speed) > 4 && (v.x - p.x) ** 2 + (v.z - p.z) ** 2 < 49);
       if (danger) { p.state = 'fleeing'; p.timer = 1.2; }
       if (p.state === 'waiting') {
         p.timer -= dt;
@@ -259,7 +259,7 @@ export class Simulation implements SimulationApi {
       if (!len) continue;
       const speed = p.speed * (p.state === 'fleeing' ? 2.15 : 1);
       const x = p.x + dx / len * speed * dt; const z = p.z + dz / len * speed * dt;
-      const blockedByPedestrian = this.state.pedestrians.some(other => other !== p && other.state !== 'dead' && dist({ x, z }, other) < 0.76);
+      const blockedByPedestrian = this.state.pedestrians.some(other => other !== p && other.state !== 'dead' && (other.x - x) ** 2 + (other.z - z) ** 2 < 0.5776);
       if (!blockedByPedestrian && !this.footBlocked(x, z, undefined, 0.36)) {
         p.x = x; p.z = z; p.yaw += angleDelta(p.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 10);
       } else {

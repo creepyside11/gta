@@ -129,17 +129,18 @@ export function App() {
       const dt = Math.min((now - previous) / 1000, 0.1);
       previous = now;
       if (!isPaused && !document.hidden && (touchMode || document.pointerLockElement === viewport)) {
-        accumulator = Math.min(accumulator + dt, 5 / 60);
-        while (accumulator >= 1 / 60) {
+        const simulationStep = touchMode ? 1 / 30 : 1 / 60;
+        accumulator = Math.min(accumulator + dt, 5 * simulationStep);
+        while (accumulator >= simulationStep) {
           const controls = input.sample();
           renderer.prepareAim(simulation.state, controls);
-          simulation.step(1 / 60, { ...controls, viewYaw: renderer.getMovementYaw(), aimRay: renderer.getAimRay() });
-          accumulator -= 1 / 60;
+          simulation.step(simulationStep, { ...controls, viewYaw: renderer.getMovementYaw(), aimRay: renderer.getAimRay() });
+          accumulator -= simulationStep;
         }
       } else { accumulator = 0; input.clear(); }
       renderer.update(simulation.state, isPaused ? 0 : dt);
       audio.update(simulation.state, isPaused || document.hidden);
-      if (now - lastUI > 90) { updateUI(); lastUI = now; }
+      if (now - lastUI > (touchMode ? 150 : 90)) { updateUI(); lastUI = now; }
       if (noticeUntil && now > noticeUntil) { setNotice(''); noticeUntil = 0; }
       frame = requestAnimationFrame(tick);
     };

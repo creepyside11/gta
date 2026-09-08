@@ -60,14 +60,27 @@ export class GameRenderer {
   private readonly impactFlashes: THREE.Mesh[] = [];
   private labelPhase = '';
   private disposed = false;
+  private readonly mobile: boolean;
+  private readonly dynamicCullDistance: number;
+  private readonly ambientCars: THREE.InstancedMesh;
+  private readonly ambientPeople: THREE.InstancedMesh;
+  private readonly ambientMatrix = new THREE.Matrix4();
+  private readonly ambientPosition = new THREE.Vector3();
+  private readonly ambientQuaternion = new THREE.Quaternion();
+  private readonly ambientScale = new THREE.Vector3();
+  private readonly ambientUp = new THREE.Vector3(0, 1, 0);
 
   constructor(host: HTMLElement, world: World, state: GameState) {
     this.host = host;
     this.world = world;
+    const coarsePointer = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    this.mobile = (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) || coarsePointer;
+    this.dynamicCullDistance = this.mobile ? 145 : 280;
+    this.camera.far = this.mobile ? 360 : 740;
     this.cameraRig = new CameraRig(this.camera, world.buildings);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, alpha: false, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1 : 1.75));
+    this.renderer.shadowMap.enabled = !this.mobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -76,11 +89,11 @@ export class GameRenderer {
     this.renderer.domElement.tabIndex = -1;
     this.host.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color('#addbdc');
-    this.scene.fog = new THREE.Fog('#addbdc', 115, 340);
+    this.scene.fog = new THREE.Fog('#addbdc', this.mobile ? 90 : 115, this.mobile ? 260 : 340);
     this.scene.add(new THREE.HemisphereLight('#e6f7ff', '#948d77', 2.15));
     this.sun.position.set(-70, 120, 65);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.castShadow = !this.mobile;
+    this.sun.shadow.mapSize.set(this.mobile ? 512 : 2048, this.mobile ? 512 : 2048);
     this.sun.shadow.camera.left = -92;
     this.sun.shadow.camera.right = 92;
     this.sun.shadow.camera.top = 92;
@@ -98,6 +111,19 @@ export class GameRenderer {
     this.buildHarbor();
     this.flushBatches();
     this.buildAtmosphere();
+    if (this.mobile) { this.clouds.visible = false; this.gulls.visible = false; }
+    this.ambientCars = new THREE.InstancedMesh(this.geometries.box, this.material('#81949b', .92), this.mobile ? 16 : 28);
+    this.ambientCars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.ambientCars.castShadow = false;
+    this.ambientCars.receiveShadow = false;
+    this.ambientCars.frustumCulled = false;
+    this.scene.add(this.ambientCars);
+    this.ambientPeople = new THREE.InstancedMesh(this.geometries.box, this.material('#758b82', .95), this.mobile ? 24 : 40);
+    this.ambientPeople.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.ambientPeople.castShadow = false;
+    this.ambientPeople.receiveShadow = false;
+    this.ambientPeople.frustumCulled = false;
+    this.scene.add(this.ambientPeople);
 
     const ringMaterial = new THREE.MeshBasicMaterial({ color: '#ffdb58', transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false });
     this.markerRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.6, 48), ringMaterial);
@@ -740,15 +766,20 @@ export class GameRenderer {
     if (this.disposed) return;
     this.updateCamera(state, dt);
     const ids = new Set<string>();
+    const cullDistanceSq = this.dynamicCullDistance * this.dynamicCullDistance;
     for (const vehicle of state.vehicles) {
       ids.add(vehicle.id);
+      const dx = vehicle.x - state.player.x, dz = vehicle.z - state.player.z;
+      const important = vehicle.id === state.player.vehicleId || vehicle.kind === 'mission' || (vehicle.kind === 'police' && state.police.wanted > 0);
+      const visible = vehicle.active && (important || dx * dx + dz * dz <= cullDistanceSq);
       let node = this.cars.get(vehicle.id);
+      if (!visible) { if (node) node.root.visible = false; continue; }
       if (!node) {
         node = this.makeCar(vehicle);
         this.cars.set(vehicle.id, node);
         this.scene.add(node.root);
       }
-      node.root.visible = vehicle.active;
+      node.root.visible = true;
       node.root.position.set(vehicle.x, .12, vehicle.z);
       node.root.rotation.y = vehicle.yaw;
       node.wheels.forEach(w => { w.rotation.x += vehicle.speed * dt / node.wheelRadius; });
@@ -763,9 +794,12 @@ export class GameRenderer {
     }
     for (const [id, node] of this.cars) if (!ids.has(id)) { this.scene.remove(node.root); this.cars.delete(id); }
     const personIds = new Set<string>();
+    const pedestrianCullSq = cullDistanceSq * .72;
     for (const p of state.pedestrians) {
       personIds.add(p.id);
+      const dx = p.x - state.player.x, dz = p.z - state.player.z;
       let node = this.people.get(p.id);
+      if (dx * dx + dz * dz > pedestrianCullSq) { if (node) node.root.visible = false; continue; }
       if (!node) { node = this.makePerson(p.color); this.people.set(p.id, node); this.scene.add(node.root); }
       if (p.state === 'dead') this.animateDead(node, p.x, p.z, p.yaw, state.time - (p.deadAt ?? state.time));
       else this.animatePerson(node, p.x, p.z, p.yaw, p.phase, p.state !== 'waiting', p.state === 'fleeing');
@@ -774,7 +808,9 @@ export class GameRenderer {
     const officerIds = new Set<string>();
     for (const officer of state.officers) {
       officerIds.add(officer.id);
+      const dx = officer.x - state.player.x, dz = officer.z - state.player.z;
       let node = this.officers.get(officer.id);
+      if (dx * dx + dz * dz > cullDistanceSq) { if (node) node.root.visible = false; continue; }
       if (!node) {
         node = this.makePerson('#2f4b63', false, true);
         this.equipPerson(node, ['pistol']);
@@ -803,11 +839,59 @@ export class GameRenderer {
     this.player.root.visible = !state.player.vehicleId;
     this.updateMarker(state);
     this.updateShots(state);
-    this.clouds.rotation.y = state.time * .00035;
-    this.gulls.position.set(Math.sin(state.time * .028) * 50, Math.sin(state.time * .2) * 1.5, Math.cos(state.time * .025) * 35);
-    this.gulls.rotation.y = state.time * .035;
-    this.gulls.children.forEach((bird, i) => { bird.rotation.z = Math.sin(state.time * 2.6 + i) * .12; });
+    this.updateAmbientActivity(state);
+    if (!this.mobile) {
+      this.clouds.rotation.y = state.time * .00035;
+      this.gulls.position.set(Math.sin(state.time * .028) * 50, Math.sin(state.time * .2) * 1.5, Math.cos(state.time * .025) * 35);
+      this.gulls.rotation.y = state.time * .035;
+      this.gulls.children.forEach((bird, i) => { bird.rotation.z = Math.sin(state.time * 2.6 + i) * .12; });
+    }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private updateAmbientActivity(state: GameState) {
+    const roads = this.world.roads;
+    const half = this.world.size / 2 - 12;
+    const span = half * 2;
+    for (let i = 0; i < this.ambientCars.count; i++) {
+      const axis = i % 2;
+      const direction = i % 4 < 2 ? 1 : -1;
+      const road = roads[(i * 3 + 1) % roads.length];
+      const lane = (i % 8 < 4 ? 1 : -1) * this.world.roadWidth * .2;
+      const speed = 6.2 + (i % 5) * .55;
+      const raw = state.time * speed * direction + i * 31.7;
+      const along = ((raw % span) + span) % span - half;
+      const x = axis ? along : road + lane;
+      const z = axis ? road + lane : along;
+      const dx = x - state.player.x, dz = z - state.player.z;
+      this.ambientPosition.set(x, .43, z);
+      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI));
+      if (dx * dx + dz * dz < 2304) this.ambientScale.setScalar(0);
+      else this.ambientScale.set(1.05, .65, 2.2);
+      this.ambientMatrix.compose(this.ambientPosition, this.ambientQuaternion, this.ambientScale);
+      this.ambientCars.setMatrixAt(i, this.ambientMatrix);
+    }
+    this.ambientCars.instanceMatrix.needsUpdate = true;
+    const sidewalk = this.world.roadWidth / 2 + 2.25;
+    for (let i = 0; i < this.ambientPeople.count; i++) {
+      const axis = i % 2;
+      const direction = i % 3 ? 1 : -1;
+      const road = roads[(i * 7 + 2) % roads.length];
+      const side = i % 4 < 2 ? 1 : -1;
+      const speed = 1.05 + (i % 6) * .08;
+      const raw = state.time * speed * direction + i * 17.3;
+      const along = ((raw % span) + span) % span - half;
+      const x = axis ? along : road + side * sidewalk;
+      const z = axis ? road + side * sidewalk : along;
+      const dx = x - state.player.x, dz = z - state.player.z;
+      this.ambientPosition.set(x, .95, z);
+      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI));
+      if (dx * dx + dz * dz < 1024) this.ambientScale.setScalar(0);
+      else this.ambientScale.set(.32, 1.7, .32);
+      this.ambientMatrix.compose(this.ambientPosition, this.ambientQuaternion, this.ambientScale);
+      this.ambientPeople.setMatrixAt(i, this.ambientMatrix);
+    }
+    this.ambientPeople.instanceMatrix.needsUpdate = true;
   }
 
   private updateMarker(state: GameState) {
