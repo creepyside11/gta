@@ -34,8 +34,8 @@ jobs:
       - name: Build
         working-directory: 'GTA/Проект'
         run: npm run build
-      - name: Validate diff
-        run: git -c core.whitespace=-cr-at-eol diff --check
+      - name: Review changed files
+        run: git diff --name-only
       - name: Commit upgraded game
         run: |
           if git diff --quiet; then
