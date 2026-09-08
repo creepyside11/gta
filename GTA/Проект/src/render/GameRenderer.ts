@@ -4,6 +4,7 @@ import { createCabinGeometry, createVehicleModel, type CarNode, type Shape } fro
 import { CameraRig } from './CameraRig';
 import { createWeaponModel, type WeaponNode } from './WeaponModels';
 import { buildSpecialBuilding } from './BuildingModels';
+import { WaterWorld } from './WaterWorld';
 
 type Batch = { geometry: THREE.BufferGeometry; material: THREE.Material; matrices: THREE.Matrix4[]; shadow: boolean };
 type ArmedArms = {
@@ -69,19 +70,20 @@ export class GameRenderer {
   private readonly ambientQuaternion = new THREE.Quaternion();
   private readonly ambientScale = new THREE.Vector3();
   private readonly ambientUp = new THREE.Vector3(0, 1, 0);
+  private readonly waterWorld: WaterWorld;
 
   constructor(host: HTMLElement, world: World, state: GameState) {
     this.host = host;
     this.world = world;
     const coarsePointer = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
     this.mobile = (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) || coarsePointer;
-    this.dynamicCullDistance = this.mobile ? 145 : 280;
-    this.camera.far = this.mobile ? 360 : 740;
+    this.dynamicCullDistance = this.mobile ? 185 : 280;
+    this.camera.far = this.mobile ? 560 : 740;
     this.cameraRig = new CameraRig(this.camera, world.buildings);
-    this.renderer = new THREE.WebGLRenderer({ antialias: !this.mobile, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1 : 1.75));
-    this.renderer.shadowMap.enabled = !this.mobile;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1.4 : 1.75));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = this.mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.06;
@@ -89,11 +91,11 @@ export class GameRenderer {
     this.renderer.domElement.tabIndex = -1;
     this.host.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color('#addbdc');
-    this.scene.fog = new THREE.Fog('#addbdc', this.mobile ? 90 : 115, this.mobile ? 260 : 340);
+    this.scene.fog = new THREE.Fog('#addbdc', this.mobile ? 108 : 115, this.mobile ? 350 : 340);
     this.scene.add(new THREE.HemisphereLight('#e6f7ff', '#948d77', 2.15));
     this.sun.position.set(-70, 120, 65);
-    this.sun.castShadow = !this.mobile;
-    this.sun.shadow.mapSize.set(this.mobile ? 512 : 2048, this.mobile ? 512 : 2048);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
     this.sun.shadow.camera.left = -92;
     this.sun.shadow.camera.right = 92;
     this.sun.shadow.camera.top = 92;
@@ -109,19 +111,23 @@ export class GameRenderer {
     world.buildings.forEach(b => this.buildBuilding(b));
     this.buildProps();
     this.buildHarbor();
+    this.waterWorld = new WaterWorld(this.scene, world, this.mobile);
     this.flushBatches();
     this.buildAtmosphere();
-    if (this.mobile) { this.clouds.visible = false; this.gulls.visible = false; }
+    if (this.mobile) this.clouds.visible = false;
     this.ambientCars = new THREE.InstancedMesh(this.geometries.box, this.material('#81949b', .92), this.mobile ? 16 : 28);
     this.ambientCars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.ambientCars.castShadow = false;
     this.ambientCars.receiveShadow = false;
     this.ambientCars.frustumCulled = false;
     this.scene.add(this.ambientCars);
-    this.ambientPeople = new THREE.InstancedMesh(this.geometries.box, this.material('#758b82', .95), this.mobile ? 24 : 40);
+    this.ambientPeople = new THREE.InstancedMesh(this.geometries.cylinder, this.material('#f0c9a6', .95), this.mobile ? 72 : 120);
     this.ambientPeople.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const crowdColors = ['#d96f62', '#5d849c', '#d7ae55', '#6d9a75', '#9a759d', '#54726d', '#c88763', '#7380a3'];
+    for (let i = 0; i < this.ambientPeople.count; i++) this.ambientPeople.setColorAt(i, new THREE.Color(crowdColors[i % crowdColors.length]));
+    if (this.ambientPeople.instanceColor) this.ambientPeople.instanceColor.needsUpdate = true;
     this.ambientPeople.castShadow = false;
-    this.ambientPeople.receiveShadow = false;
+    this.ambientPeople.receiveShadow = true;
     this.ambientPeople.frustumCulled = false;
     this.scene.add(this.ambientPeople);
 
@@ -723,6 +729,22 @@ export class GameRenderer {
     node.body.rotation.set(fleeing ? .15 : 0, 0, 0);
   }
 
+  private animateSwimming(node: PersonNode, x: number, z: number, yaw: number, phase: number, moving: boolean) {
+    node.root.visible = true;
+    node.root.position.set(x, -1.93 + Math.sin(phase * .45) * .045, z);
+    node.root.rotation.y = yaw;
+    const stroke = moving ? Math.sin(phase) : 0;
+    node.body.position.set(0, 0, 0);
+    node.body.rotation.set(-.22, 0, 0);
+    node.leftArm.visible = node.rightArm.visible = true;
+    node.leftArm.rotation.set(stroke * 1.15 - .35, 0, -.22);
+    node.rightArm.rotation.set(-stroke * 1.15 - .35, 0, .22);
+    node.leftLeg.rotation.set(-stroke * .38, 0, 0);
+    node.rightLeg.rotation.set(stroke * .38, 0, 0);
+    if (node.armedArms) node.armedArms.root.visible = false;
+    if (node.weapons) for (const weapon of Object.values(node.weapons)) weapon.root.visible = false;
+  }
+
   private animateDead(node: PersonNode, x: number, z: number, yaw: number, age: number) {
     const fall = THREE.MathUtils.smoothstep(age, 0, .28);
     node.root.visible = age < 25;
@@ -831,7 +853,8 @@ export class GameRenderer {
     if (combat.dead) this.animateDead(this.player, state.player.x, state.player.z, state.player.yaw, Math.max(0, 4 - combat.respawnIn));
     else {
       const yaw = !state.player.vehicleId && (combat.weapon !== 'knife' || attackAge < .32) ? combat.aimYaw : state.player.yaw;
-      this.animatePerson(this.player, state.player.x, state.player.z, yaw, state.time * 10.5, state.player.moving);
+      if (state.player.swimming) this.animateSwimming(this.player, state.player.x, state.player.z, yaw, state.time * 7.2, state.player.moving);
+      else this.animatePerson(this.player, state.player.x, state.player.z, yaw, state.time * 10.5, state.player.moving);
       const flashing = combat.shots.some(shot => shot.owner === 'player' && shot.weapon === combat.weapon && state.time - shot.time < .075);
       const reloadProgress = combat.reload ? 1 - combat.reload.remaining / combat.reload.duration : null;
       this.poseWeapon(this.player, combat.weapon, attackAge, this.cameraRig.getPitch(), reloadProgress, flashing);
@@ -840,6 +863,7 @@ export class GameRenderer {
     this.updateMarker(state);
     this.updateShots(state);
     this.updateAmbientActivity(state);
+    this.waterWorld.update(state.time);
     if (!this.mobile) {
       this.clouds.rotation.y = state.time * .00035;
       this.gulls.position.set(Math.sin(state.time * .028) * 50, Math.sin(state.time * .2) * 1.5, Math.cos(state.time * .025) * 35);
@@ -873,6 +897,7 @@ export class GameRenderer {
     }
     this.ambientCars.instanceMatrix.needsUpdate = true;
     const sidewalk = this.world.roadWidth / 2 + 2.25;
+    const promenade = this.world.size / 2 - 4.4;
     for (let i = 0; i < this.ambientPeople.count; i++) {
       const axis = i % 2;
       const direction = i % 3 ? 1 : -1;
@@ -881,13 +906,16 @@ export class GameRenderer {
       const speed = 1.05 + (i % 6) * .08;
       const raw = state.time * speed * direction + i * 17.3;
       const along = ((raw % span) + span) % span - half;
-      const x = axis ? along : road + side * sidewalk;
-      const z = axis ? road + side * sidewalk : along;
+      const waterfront = i % 5 === 0;
+      const coastSide = i % 4;
+      const x = waterfront ? (coastSide < 2 ? (coastSide ? promenade : -promenade) : along) : axis ? along : road + side * sidewalk;
+      const z = waterfront ? (coastSide < 2 ? along : (coastSide === 2 ? promenade : -promenade)) : axis ? road + side * sidewalk : along;
       const dx = x - state.player.x, dz = z - state.player.z;
-      this.ambientPosition.set(x, .95, z);
-      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI));
-      if (dx * dx + dz * dz < 1024) this.ambientScale.setScalar(0);
-      else this.ambientScale.set(.32, 1.7, .32);
+      this.ambientPosition.set(x, .78, z);
+      const heading = waterfront ? (coastSide < 2 ? (direction > 0 ? 0 : Math.PI) : (direction > 0 ? Math.PI / 2 : -Math.PI / 2)) : axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI);
+      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, heading);
+      if (dx * dx + dz * dz < 324) this.ambientScale.setScalar(0);
+      else this.ambientScale.set(.24, 1.35, .24);
       this.ambientMatrix.compose(this.ambientPosition, this.ambientQuaternion, this.ambientScale);
       this.ambientPeople.setMatrixAt(i, this.ambientMatrix);
     }

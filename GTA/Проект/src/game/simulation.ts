@@ -10,12 +10,13 @@ const FOOT_RADIUS = 0.48;
 const FIXED_STEP = 1 / 90;
 const SPAWN = { x: 13, z: 36 };
 const TAU = Math.PI * 2;
+const WATER_MARGIN = 150;
 
 /** Deterministic ground-plane dynamics for vertically extruded 3D colliders. */
 export class Simulation implements SimulationApi {
   world: World = createWorld();
   state: GameState = {
-    time: 0, player: { ...SPAWN, yaw: Math.PI, vehicleId: null, moving: false },
+    time: 0, player: { ...SPAWN, yaw: Math.PI, vehicleId: null, moving: false, swimming: false },
     vehicles: createVehicles(this.world), pedestrians: createPedestrians(this.world),
     mission: { phase: 'available', elapsed: 0, best: null, deliveryHold: 0 },
     police: { wanted: 0, escape: 0, caught: 0, cooldown: 0, lastSeen: null, spotted: false, reinforcementTimer: 7 },
@@ -78,8 +79,18 @@ export class Simulation implements SimulationApi {
     if (s.combat.dead) this.updateDeath(dt); else this.updateMission(dt);
   }
 
-  private footBlocked(x: number, z: number, ignoreVehicle?: string, radius = FOOT_RADIUS, ignoreOfficer?: string): boolean {
-    if (Math.abs(x) + radius > this.world.size / 2 - 1 || Math.abs(z) + radius > this.world.size / 2 - 1) return true;
+  private isWaterPoint(x: number, z: number): boolean {
+    const islandEdge = this.world.size / 2 - .62;
+    return Math.abs(x) > islandEdge || Math.abs(z) > islandEdge;
+  }
+
+  private footBlocked(x: number, z: number, ignoreVehicle?: string, radius = FOOT_RADIUS, ignoreOfficer?: string, allowWater = false): boolean {
+    const islandEdge = this.world.size / 2 - .62;
+    if (allowWater) {
+      const waterLimit = this.world.size / 2 + WATER_MARGIN;
+      if (Math.abs(x) + radius > waterLimit || Math.abs(z) + radius > waterLimit) return true;
+      if (this.isWaterPoint(x, z)) return false;
+    } else if (Math.abs(x) + radius > islandEdge || Math.abs(z) + radius > islandEdge) return true;
     for (const solid of this.world.buildings) if (circleIntersectsBox(x, z, radius, solid)) return true;
     for (const solid of this.world.obstacles) if (circleIntersectsBox(x, z, radius, solid)) return true;
     if (this.state.vehicles.some(v => v.active && v.id !== ignoreVehicle && circleIntersectsBox(x, z, radius, v))) return true;
@@ -106,6 +117,8 @@ export class Simulation implements SimulationApi {
 
   private updateWalking(dt: number, input: InputFrame): void {
     const p = this.state.player;
+    const wasSwimming = p.swimming;
+    p.swimming = this.isWaterPoint(p.x, p.z);
     const strafe = Number.isFinite(input.turn) ? clamp(input.turn, -1, 1) : 0;
     const forward = Number.isFinite(input.forward) ? clamp(input.forward, -1, 1) : 0;
     const viewYaw = input.viewYaw;
@@ -117,12 +130,15 @@ export class Simulation implements SimulationApi {
     const length = Math.hypot(dx, dz);
     p.moving = length > 0;
     if (!length) return;
-    const speed = input.sprint ? 8 : 5.2;
+    const swimmingNext = p.swimming || this.isWaterPoint(p.x + dx * .3, p.z + dz * .3);
+    const speed = swimmingNext ? (input.sprint ? 3.8 : 2.9) : input.sprint ? 8 : 5.2;
     const moveX = dx / length * speed * dt;
     const moveZ = dz / length * speed * dt;
-    p.yaw += angleDelta(p.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 16);
-    if (!this.footBlocked(p.x + moveX, p.z)) p.x += moveX;
-    if (!this.footBlocked(p.x, p.z + moveZ)) p.z += moveZ;
+    p.yaw += angleDelta(p.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * (swimmingNext ? 8 : 16));
+    if (!this.footBlocked(p.x + moveX, p.z, undefined, FOOT_RADIUS, undefined, true)) p.x += moveX;
+    if (!this.footBlocked(p.x, p.z + moveZ, undefined, FOOT_RADIUS, undefined, true)) p.z += moveZ;
+    p.swimming = this.isWaterPoint(p.x, p.z);
+    if (!wasSwimming && p.swimming) this.message('Swimming · use movement controls to head back to shore.', 3);
   }
 
   private updateDriving(car: Vehicle, dt: number, input: InputFrame): void {
@@ -166,7 +182,7 @@ export class Simulation implements SimulationApi {
       car.x = x; car.z = z; car.yaw = yaw % TAU;
     }
     const p = this.state.player;
-    p.x = car.x; p.z = car.z; p.yaw = car.yaw; p.moving = Math.abs(car.speed) > 0.1;
+    p.x = car.x; p.z = car.z; p.yaw = car.yaw; p.moving = Math.abs(car.speed) > 0.1; p.swimming = false;
     if (Math.abs(car.speed) > 3 && this.pedestrianHitCooldown <= 0) {
       for (const pedestrian of this.state.pedestrians) {
         if (pedestrian.state === 'dead') continue;
@@ -751,7 +767,7 @@ export class Simulation implements SimulationApi {
       const exit = exits.find(point => !this.footBlocked(point.x, point.z));
       if (!exit) { this.message('Both doors are blocked. Move to an open space.', 3); return; }
       s.player.vehicleId = null; s.player.x = exit.x; s.player.z = exit.z;
-      s.player.yaw = controlled.yaw; s.player.moving = false;
+      s.player.yaw = controlled.yaw; s.player.moving = false; s.player.swimming = false;
       controlled.speed = 0;
       this.message('On foot. Your car stays where you parked it.', 2.5);
       return;
@@ -763,7 +779,7 @@ export class Simulation implements SimulationApi {
     }
     const car = this.nearbyVehicle();
     if (!car) return;
-    s.player.vehicleId = car.id; s.player.x = car.x; s.player.z = car.z; s.player.yaw = car.yaw; car.steer = 0;
+    s.player.vehicleId = car.id; s.player.x = car.x; s.player.z = car.z; s.player.yaw = car.yaw; s.player.swimming = false; car.steer = 0;
     if (car.kind === 'traffic') {
       // A stopped traffic car becomes a persistent, freely usable parked car.
       car.kind = 'parked'; car.route = []; car.speed = 0;
@@ -795,7 +811,7 @@ export class Simulation implements SimulationApi {
     missionCar.speed = 0; missionCar.steer = 0;
     const spawnOptions = [SPAWN, { x: 14, z: 36 }, { x: 14, z: 43 }, { x: 12, z: 33 }, { x: 15, z: 40 }];
     const spawn = spawnOptions.find(p => !this.footBlocked(p.x, p.z)) ?? oldPlayer;
-    s.player.x = spawn.x; s.player.z = spawn.z; s.player.yaw = Math.PI; s.player.moving = false;
+    s.player.x = spawn.x; s.player.z = spawn.z; s.player.yaw = Math.PI; s.player.moving = false; s.player.swimming = false;
     s.mission = { phase: 'available', elapsed: 0, best: s.mission.best, deliveryHold: 0 };
     s.police = { wanted: 0, escape: 0, caught: 0, cooldown: 2, lastSeen: null, spotted: false, reinforcementTimer: 7 };
     this.collisionCooldown = 0; this.pedestrianHitCooldown = 0;
@@ -812,6 +828,7 @@ export class Simulation implements SimulationApi {
       }
       return Math.abs(car.speed) <= 1.8 ? 'E · Exit vehicle' : 'SPACE · Brake   S · Brake / reverse';
     }
+    if (this.state.player.swimming) return 'SWIM · Move toward shore · Sprint for a faster stroke';
     if (this.state.mission.phase === 'available' && dist(this.state.player, this.world.pickup) < 4) return 'E · Start Portside Express';
     const nearby = this.nearbyVehicle();
     if (nearby) return nearby.id === MISSION_CAR_ID ? 'E · Enter courier car' : 'E · Enter vehicle';

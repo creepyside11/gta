@@ -51,7 +51,7 @@ export interface Pedestrian extends Point {
   state: 'walking' | 'waiting' | 'fleeing' | 'dead'; timer: number;
   health: number; deadAt: number | null;
 }
-export interface Player extends Point { yaw: number; vehicleId: string | null; moving: boolean }
+export interface Player extends Point { yaw: number; vehicleId: string | null; moving: boolean; swimming?: boolean }
 export type MissionPhase = 'available' | 'collect' | 'deliver' | 'success' | 'failed';
 export interface Mission { phase: MissionPhase; elapsed: number; best: number | null; deliveryHold: number }
 export interface PoliceSighting extends Point { yaw: number; speed: number; inVehicle: boolean; time: number }
