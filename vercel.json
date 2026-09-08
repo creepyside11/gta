@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "cd \"GTA/Проект\" && npm ci",
+  "buildCommand": "cd \"GTA/Проект\" && npm run build",
+  "outputDirectory": "GTA/Проект/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
