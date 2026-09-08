@@ -34,7 +34,7 @@ jobs:
         working-directory: 'GTA/Проект'
         run: npm run build
       - name: Validate diff
-        run: git diff --check
+        run: git -c core.whitespace=cr-at-eol diff --check
       - name: Commit optimized source
         run: |
           if git diff --quiet; then
