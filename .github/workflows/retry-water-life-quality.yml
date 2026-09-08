@@ -35,7 +35,7 @@ jobs:
         working-directory: 'GTA/Проект'
         run: npm run build
       - name: Validate diff
-        run: git diff --check --ignore-space-at-eol
+        run: git -c core.whitespace=-cr-at-eol diff --check
       - name: Commit upgraded game
         run: |
           if git diff --quiet; then
