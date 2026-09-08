@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'scripts/apply-mobile-city-optimization.mjs'
+      - 'scripts/run-mobile-city-optimization.mjs'
       - '.github/workflows/apply-mobile-city-optimization.yml'
 
 permissions:
@@ -22,7 +23,7 @@ jobs:
           cache: npm
           cache-dependency-path: 'GTA/Проект/package-lock.json'
       - name: Apply source patches
-        run: node scripts/apply-mobile-city-optimization.mjs
+        run: node scripts/run-mobile-city-optimization.mjs
       - name: Install dependencies
         working-directory: 'GTA/Проект'
         run: npm ci
