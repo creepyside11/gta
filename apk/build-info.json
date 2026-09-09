@@ -1,0 +1,10 @@
+{
+  "sourceCommit": "f69c12eb2f8212ee07022e1f56986e84ce3f9972",
+  "workflowRun": "34394709725",
+  "sha256": "18701c29c07a629cc803d9c6d7ae6ee5412cccb2662619e77c4a20d526a0bc4b",
+  "bytes": 1443799,
+  "package": "com.creepyside11.portside.debug",
+  "minimumAndroid": "8.0",
+  "buildType": "debug",
+  "offline": true
+}
