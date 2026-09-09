@@ -121,7 +121,8 @@ test('crashing into another solid vehicle causes heat and leaves both bodies sep
   assert.ok(sim.state.collisions > 0);
   assert.equal(sim.state.police.wanted, 1);
   assert.ok(!boxIntersects(car, obstacle));
-  assert.equal(obstacle.z, 28);
+  assert.ok(obstacle.z < 28 && obstacle.z > 22, 'impact transfers momentum without teleporting the parked car');
+  assert.ok(obstacle.damage && obstacle.damage.integrity < 1);
 });
 
 test('traffic brakes for a parked blocker and resumes without teleporting once clear', () => {

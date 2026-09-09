@@ -1,3 +1,4 @@
+import { contactNormal, driveEfficiency, resolveVehicleImpact } from './damage';
 import { angleDelta, boxIntersects, circleIntersectsBox, clamp, dist } from './collision';
 import { createPedestrians, createVehicles, MISSION_CAR_ID, routeToTarget, steerToward } from './ai';
 import type { GameState, InputFrame, Pedestrian, Point, PoliceOfficer, SimulationApi, Vehicle, World } from './types';
@@ -65,6 +66,7 @@ export class Simulation implements SimulationApi {
     this.collisionCooldown = Math.max(0, this.collisionCooldown - dt);
     this.pedestrianHitCooldown = Math.max(0, this.pedestrianHitCooldown - dt);
     s.police.cooldown = Math.max(0, s.police.cooldown - dt);
+    this.updateImpactMotion(dt);
     const car = this.controlledCar();
     if (!s.combat.dead) {
       if (car) this.updateDriving(car, dt, input); else this.updateWalking(dt, input);
@@ -141,19 +143,56 @@ export class Simulation implements SimulationApi {
     if (!wasSwimming && p.swimming) this.message('Swimming · use movement controls to head back to shore.', 3);
   }
 
+  private applyCollision(car: Vehicle, blocked: string, x: number, z: number, yaw: number): void {
+    const other = this.state.vehicles.find(v => v.id === blocked);
+    const solid = this.world.buildings.find(v => v.id === blocked) ?? this.world.obstacles.find(v => v.id === blocked);
+    let normal;
+    if (other || solid) normal = contactNormal({ ...car, x, z, yaw }, (other ?? solid)!);
+    else if (blocked === 'boundary') {
+      const ex = Math.abs(Math.cos(yaw)) * car.width / 2 + Math.abs(Math.sin(yaw)) * car.depth / 2;
+      const ez = Math.abs(Math.sin(yaw)) * car.width / 2 + Math.abs(Math.cos(yaw)) * car.depth / 2;
+      normal = Math.abs(x) + ex > Math.abs(z) + ez ? { x: Math.sign(x), z: 0 } : { x: 0, z: Math.sign(z) };
+    } else { car.speed = 0; return; }
+    const energy = resolveVehicleImpact(car, other ?? null, normal, this.state.time);
+    const playerInvolved = car.id === this.state.player.vehicleId || other?.id === this.state.player.vehicleId;
+    if (playerInvolved && energy > 1800 && this.collisionCooldown <= 0) {
+      this.state.collisions++; this.collisionCooldown = .2;
+      if (other && (energy > 25000 || other.kind === 'police')) this.raiseWanted('Vehicle collision reported. Lose the patrol to clear your heat.');
+      if (car.id === this.state.player.vehicleId && driveEfficiency(car) === 0) this.message('Engine disabled. Exit the car or restart the delivery.', 4);
+    }
+  }
+
+  private updateImpactMotion(dt: number): void {
+    for (const car of this.state.vehicles) {
+      const d = car.damage;
+      if (!d || !car.active) continue;
+      if (Math.hypot(d.driftX, d.driftZ) > .01) {
+        const x = car.x + d.driftX * dt, z = car.z + d.driftZ * dt;
+        const blocked = this.vehicleBlock(car, x, z, car.yaw, false);
+        if (blocked) { this.applyCollision(car, blocked, x, z, car.yaw); d.driftX *= .5; d.driftZ *= .5; }
+        else { car.x = x; car.z = z; }
+      }
+      d.driftX *= Math.exp(-3 * dt); d.driftZ *= Math.exp(-3 * dt);
+      if (driveEfficiency(car) === 0) car.speed *= Math.exp(-2 * dt);
+    }
+  }
+
   private updateDriving(car: Vehicle, dt: number, input: InputFrame): void {
     const throttle = Number.isFinite(input.forward) ? clamp(input.forward, -1, 1) : 0;
+    const efficiency = driveEfficiency(car);
+    car.throttle = throttle; car.braking = input.brake || (throttle * car.speed < -.4);
     const turn = Number.isFinite(input.turn) ? clamp(input.turn, -1, 1) : 0;
     if (input.brake) {
       car.speed = Math.sign(car.speed) * Math.max(0, Math.abs(car.speed) - 20 * dt);
     } else if (throttle) {
       const braking = Math.sign(throttle) !== Math.sign(car.speed) && Math.abs(car.speed) > 0.4;
-      car.speed += throttle * (braking ? 17 : throttle > 0 ? 10.2 : 6.4) * dt;
+      car.speed += throttle * (braking ? 17 : throttle > 0 ? 10.2 * efficiency : 6.4 * efficiency) * dt;
     }
     car.speed *= Math.exp(-(throttle && !input.brake ? 0.11 : 0.56) * dt);
     if (Math.abs(car.speed) < 0.018) car.speed = 0;
     car.speed = clamp(car.speed, -10, 29);
-    car.steer += (-turn * 0.58 - car.steer) * Math.min(1, 7 * dt);
+    const bias = ((car.damage?.left ?? 0) - (car.damage?.right ?? 0)) * .12;
+    car.steer += (-turn * 0.58 + bias - car.steer) * Math.min(1, 7 * dt);
     const speedTurn = car.speed / (1 + Math.abs(car.speed) * 0.07);
     let yaw = car.yaw + Math.tan(car.steer) * speedTurn / 3.05 * dt;
     let x = car.x + Math.sin(yaw) * car.speed * dt;
@@ -169,15 +208,7 @@ export class Simulation implements SimulationApi {
       }
     }
     if (blocked) {
-      const impact = Math.abs(car.speed);
-      if (this.collisionCooldown <= 0 && impact > 1.5) {
-        this.state.collisions++;
-        this.collisionCooldown = 0.55;
-        const other = this.state.vehicles.find(v => v.id === blocked);
-        if (other && (impact > 7 || other.kind === 'police')) this.raiseWanted('Vehicle collision reported. Lose the patrol to clear your heat.');
-        else if (impact > 5) this.message('Collision! Brake early and give solid objects room.', 2.2);
-      }
-      car.speed = impact > 3 ? -Math.sign(car.speed) * Math.min(1.3, impact * 0.09) : 0;
+      this.applyCollision(car, blocked, x, z, yaw);
     } else {
       car.x = x; car.z = z; car.yaw = yaw % TAU;
     }
@@ -210,7 +241,8 @@ export class Simulation implements SimulationApi {
       car.speed *= Math.exp(-4 * dt);
       const x = car.x + Math.sin(car.yaw) * car.speed * dt;
       const z = car.z + Math.cos(car.yaw) * car.speed * dt;
-      if (this.vehicleBlock(car, x, z, car.yaw)) car.speed = 0; else { car.x = x; car.z = z; }
+      const blocked = this.vehicleBlock(car, x, z, car.yaw);
+      if (blocked) this.applyCollision(car, blocked, x, z, car.yaw); else { car.x = x; car.z = z; }
     }
   }
 
@@ -224,7 +256,10 @@ export class Simulation implements SimulationApi {
       target = car.route[car.waypoint];
     }
     const oldYaw = car.yaw;
-    steerToward(car, target, dt, speed);
+    const stoppingDistance = .3 + Math.max(0, car.speed) ** 2 / 18;
+    const obstacleAhead = this.vehicleBlock(car, car.x + Math.sin(car.yaw) * stoppingDistance,
+      car.z + Math.cos(car.yaw) * stoppingDistance, car.yaw);
+    steerToward(car, target, dt, obstacleAhead ? 0 : speed * driveEfficiency(car));
     const x = car.x + Math.sin(car.yaw) * car.speed * dt;
     const z = car.z + Math.cos(car.yaw) * car.speed * dt;
     const dangerBox = { x, z, width: car.width, depth: car.depth + 0.6, yaw: car.yaw };
@@ -234,7 +269,7 @@ export class Simulation implements SimulationApi {
     if (!blocked) { car.x = x; car.z = z; car.blocked = Math.max(0, car.blocked - dt * 2); }
     else {
       car.yaw = oldYaw;
-      car.speed = 0;
+      this.applyCollision(car, blocked, x, z, oldYaw);
       car.blocked += dt;
       // A short, collision-tested backoff gives turning cars room at junctions.
       if (car.blocked > 2.5 && car.blocked < 3.7 && blocked !== 'player' && blocked !== 'pedestrian') {
@@ -582,7 +617,7 @@ export class Simulation implements SimulationApi {
     if (memory.avoidance) { target = memory.avoidance; desiredSpeed = Math.min(maximum, 14); }
     const angle = angleDelta(car.yaw, Math.atan2(target.x - car.x, target.z - car.z));
     if (Math.abs(angle) > .55) desiredSpeed = Math.min(desiredSpeed, Math.abs(angle) > 1.2 ? 3.5 : 6.5);
-    car.speed += clamp(desiredSpeed - car.speed, -15 * dt, 8.5 * dt);
+    car.speed += clamp(desiredSpeed * driveEfficiency(car) - car.speed, -15 * dt, 8.5 * dt);
     const yaw = car.yaw + clamp(angle, -(0.65 + Math.abs(car.speed) * .12) * dt, (0.65 + Math.abs(car.speed) * .12) * dt);
     const x = car.x + Math.sin(yaw) * car.speed * dt, z = car.z + Math.cos(yaw) * car.speed * dt;
     const danger = this.policePedestrianHazard(car, x, z, yaw);
@@ -594,7 +629,7 @@ export class Simulation implements SimulationApi {
       // A turning rear corner can touch a neighbour while straight motion is clear.
       const sx = car.x + Math.sin(car.yaw) * car.speed * dt, sz = car.z + Math.cos(car.yaw) * car.speed * dt;
       if (!danger && !this.vehicleBlock(car, sx, sz, car.yaw)) { car.x = sx; car.z = sz; }
-      else car.speed = 0;
+      else this.applyCollision(car, blocked!, x, z, yaw);
       car.blocked += dt;
     }
     if (car.blocked > 1.1 && blocked !== 'player' && blocked !== 'pedestrian') {
@@ -797,7 +832,7 @@ export class Simulation implements SimulationApi {
     // T is an explicit reset. Only reset-owned entities move; live traffic keeps running.
     s.player.vehicleId = null;
     for (const police of s.vehicles.filter(v => v.kind === 'police')) {
-      police.active = false; police.speed = 0; police.route = []; police.waypoint = 0; police.blocked = 0;
+      police.damage = undefined; police.active = false; police.speed = 0; police.route = []; police.waypoint = 0; police.blocked = 0;
     }
     s.vehicles = s.vehicles.filter(car => car.kind !== 'police' || car.id === 'police-0' || car.id === 'police-1');
     s.officers = [];
@@ -808,6 +843,7 @@ export class Simulation implements SimulationApi {
     const oldPlayer = { x: s.player.x, z: s.player.z };
     const spot = candidates.find(p => !this.vehicleBlock(missionCar, p.x, p.z, Math.PI, false));
     if (spot) { missionCar.x = spot.x; missionCar.z = spot.z; missionCar.yaw = Math.PI; }
+    missionCar.damage = undefined; missionCar.throttle = 0; missionCar.braking = false;
     missionCar.speed = 0; missionCar.steer = 0;
     const spawnOptions = [SPAWN, { x: 14, z: 36 }, { x: 14, z: 43 }, { x: 12, z: 33 }, { x: 15, z: 40 }];
     const spawn = spawnOptions.find(p => !this.footBlocked(p.x, p.z)) ?? oldPlayer;
@@ -826,6 +862,7 @@ export class Simulation implements SimulationApi {
         if (this.state.police.wanted) return 'Lose the patrol before delivering';
         return Math.abs(car.speed) >= 1.15 ? 'SPACE · Stop inside the mint zone' : 'Hold still · Delivering package…';
       }
+      if (driveEfficiency(car) === 0) return 'E · Engine disabled — exit vehicle';
       return Math.abs(car.speed) <= 1.8 ? 'E · Exit vehicle' : 'SPACE · Brake   S · Brake / reverse';
     }
     if (this.state.player.swimming) return 'SWIM · Move toward shore · Sprint for a faster stroke';

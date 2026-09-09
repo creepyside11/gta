@@ -128,7 +128,8 @@ test('a patrol physically passes a parked lane blocker instead of repeating a pe
     if (frame % 12 === 0) assertPatrolGeometry(sim);
   }
   assert.ok(unit.z < 30, `the patrol failed to get around the parked car: ${JSON.stringify({ x: unit.x, z: unit.z, blocked: unit.blocked })}`);
-  assert.deepEqual({ x: blocker.x, z: blocker.z, yaw: blocker.yaw }, originalBlocker, 'the parked blocker stays in place');
+  assert.ok(dist(blocker, originalBlocker) < 5, 'an impacted parked car may roll a short distance, never teleport');
+  assert.ok(blocker.damage && blocker.damage.integrity < 1, 'the patrol impact damages the movable blocker');
   assertPatrolGeometry(sim);
 });
 

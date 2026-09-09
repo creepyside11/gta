@@ -1,3 +1,4 @@
+import { updateVehicleDamage, disposeVehicleDamage } from './VehicleDamageVisual';
 import * as THREE from 'three';
 import type { AimRay, Building, GameState, InputFrame, Vehicle, WeaponId, World } from '../game/types';
 import { createCabinGeometry, createVehicleModel, type CarNode, type Shape } from './VehicleModels';
@@ -802,6 +803,7 @@ export class GameRenderer {
         this.scene.add(node.root);
       }
       node.root.visible = true;
+      updateVehicleDamage(node, vehicle, state.time);
       node.root.position.set(vehicle.x, .12, vehicle.z);
       node.root.rotation.y = vehicle.yaw;
       node.wheels.forEach(w => { w.rotation.x += vehicle.speed * dt / node.wheelRadius; });
@@ -814,7 +816,7 @@ export class GameRenderer {
         node.rightLight.material = this.material('#67a9e9', .6, '#438dff', state.police.wanted > 0 && !flash ? 3 : .12);
       }
     }
-    for (const [id, node] of this.cars) if (!ids.has(id)) { this.scene.remove(node.root); this.cars.delete(id); }
+    for (const [id, node] of this.cars) if (!ids.has(id)) { disposeVehicleDamage(node); this.scene.remove(node.root); this.cars.delete(id); }
     const personIds = new Set<string>();
     const pedestrianCullSq = cullDistanceSq * .72;
     for (const p of state.pedestrians) {
@@ -983,6 +985,7 @@ export class GameRenderer {
   }
 
   dispose() {
+    for (const node of this.cars.values()) disposeVehicleDamage(node);
     if (this.disposed) return;
     this.disposed = true;
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();

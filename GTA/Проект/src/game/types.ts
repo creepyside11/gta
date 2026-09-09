@@ -38,7 +38,14 @@ export interface World {
   pickup: Point; destination: Point; restricted: Point & { radius: number };
 }
 export type VehicleModel = 'sedan' | 'truck' | 'pickup' | 'hatchback' | 'sport';
+export interface VehicleDamage {
+  integrity: number; front: number; rear: number; left: number; right: number; engine: number;
+  driftX: number; driftZ: number; revision: number; lastImpact: number; impactEnergy: number;
+}
 export interface Vehicle extends Point {
+  damage?: VehicleDamage;
+  throttle?: number; braking?: boolean;
+
   id: string; yaw: number; speed: number; steer: number;
   model: VehicleModel;
   kind: 'parked' | 'traffic' | 'police' | 'mission';

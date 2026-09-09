@@ -56,6 +56,7 @@ export function App() {
     try { renderer = new GameRenderer(host.current, simulation.world, simulation.state); }
     catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); return; }
     const audio = new GameAudio();
+    let audioStarted = false;
     const resizeObserver = new ResizeObserver(() => renderer.resize());
     resizeObserver.observe(host.current);
     let isPaused = true;
@@ -96,6 +97,10 @@ export function App() {
       isPaused = true; setPaused(true); input.clear(); mouse.release();
     };
     const play = () => {
+      if (!audioStarted) {
+        audioStarted = true;
+        void audio.start().then(value => { if (!disposed) setSound(value); }).catch(() => { audioStarted = false; notify("Tap the sound button to enable audio."); });
+      }
       isHelp = false; setHelp(false); setCaptureError(''); input.clear();
       // Request within the click/key gesture; only a successful lock resumes play.
       if (touchMode) { isPaused = false; setPaused(false); setStarted(true); focus(); }
@@ -108,7 +113,7 @@ export function App() {
         if (isHelp) play();
         else { isHelp = true; setHelp(true); pauseGame(); }
       },
-      sound: () => { void audio.toggle().then(value => { if (!disposed) setSound(value); }).catch(() => notify('Audio is unavailable in this browser.')); focus(); },
+      sound: () => { audioStarted = true; void audio.toggle().then(value => { if (!disposed) setSound(value); }).catch(() => notify('Audio is unavailable in this browser.')); focus(); },
       restart: () => { simulation.restartMission(); input.clear(); if (isPaused) play(); },
       camera: () => { notify(renderer.cycleCamera()); focus(); },
       map: () => { setExpandedMap(value => !value); focus(); },
@@ -254,6 +259,11 @@ export function App() {
         <section className="player-panel panel" aria-label="Player status">
           <div className="player-mode"><span className="mode-icon"><Icon name={controlled ? 'car' : 'person'} size={23}/></span><div><span className="eyebrow small">{controlled ? controlled.kind === 'mission' ? 'COURIER COUPE' : VEHICLE_SPECS[controlled.model].label.toUpperCase() : 'MAKE YOUR OWN WAY'}</span><strong>{controlled ? 'DRIVING' : 'ON FOOT'}</strong></div><i className="live-dot"/></div>
           {controlled && <div className="speedometer"><strong>{Math.round(Math.abs(controlled.speed) * 3.6).toString().padStart(2, '0')}</strong><span>KM/H</span><div className="speed-bars">{Array.from({ length: 14 }, (_, n) => <i key={n} className={n < Math.abs(controlled.speed) / 2 ? 'filled' : ''}/>)}</div><b>{controlled.speed < -0.3 ? 'R' : Math.abs(controlled.speed) < 0.2 ? 'N' : 'D'}</b></div>}
+          {controlled && <div className={`vehicle-condition ${(controlled.damage?.integrity ?? 1) < .35 ? 'critical' : ''}`} aria-label="Vehicle condition">
+            <div><span>BODY</span><strong>{Math.round((controlled.damage?.integrity ?? 1) * 100)}%</strong></div>
+            <div className="condition-track"><i style={{ width: `${(controlled.damage?.integrity ?? 1) * 100}%` }}/></div>
+            <small>{(controlled.damage?.engine ?? 1) < .08 || (controlled.damage?.integrity ?? 1) < .08 ? 'ENGINE DISABLED' : (controlled.damage?.engine ?? 1) < .6 ? 'ENGINE DAMAGED' : 'ENGINE OK'}</small>
+          </div>}
           {combat && <div className={`health-status ${combat.health <= 30 ? 'critical' : ''}`}><div><span>HEALTH</span><strong>{Math.ceil(Math.max(0, combat.health))}<small> / 100</small></strong></div><div className="health-meter" role="progressbar" aria-label="Health" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.ceil(Math.max(0, combat.health))}><i style={{ width: `${Math.max(0, combat.health)}%` }}/></div></div>}
         </section>
         <div className="session-caption"><span className="session-line"/> NO RUSH. JUST EXPLORE.</div>
