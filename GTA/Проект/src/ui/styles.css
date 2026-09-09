@@ -85,3 +85,4 @@
 @media(max-width:360px){.touch-stick{width:120px;height:120px;left:12px}.touch-stick i{left:34px;top:34px}.touch-actions{right:10px;grid-template-columns:repeat(2,72px)}}
 
 .vehicle-condition{margin-top:9px;font-size:9px;color:var(--lime)}.vehicle-condition>div:first-child{display:flex;justify-content:space-between}.condition-track{height:4px;margin:5px 0;background:#dff69725;border-radius:3px;overflow:hidden}.condition-track i{display:block;height:100%;background:currentColor}.vehicle-condition small{font-size:7px;letter-spacing:.7px}.vehicle-condition.critical{color:#ff9879}.touch-mode .vehicle-condition{margin-top:0;margin-bottom:8px}
+@media(orientation:landscape) and (max-height:600px){.touch-mode.is-driving .map-area{top:calc(58px + env(safe-area-inset-top));left:calc(50% - 45px);right:auto}}
