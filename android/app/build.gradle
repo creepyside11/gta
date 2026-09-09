@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.creepyside11.portside'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.creepyside11.portside'
+        minSdk 26
+        targetSdk 35
+        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName '1.0'
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug' }
+        release { minifyEnabled false }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/gameAssets')
+}
+
+def gameDist = file('../../GTA/Проект/dist')
+tasks.register('syncGameAssets', Sync) {
+    from gameDist
+    into layout.buildDirectory.dir('generated/gameAssets')
+    doFirst {
+        if (!new File(gameDist, 'index.html').isFile()) {
+            throw new GradleException('Build the web game first: npm run build --prefix "GTA/Проект"')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'syncGameAssets' }
+dependencies { implementation 'androidx.webkit:webkit:1.12.1' }

@@ -1,0 +1,96 @@
+name: Build and publish Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'GTA/Проект/**'
+      - '.github/workflows/build-android-apk.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-main
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: 'GTA/Проект/package-lock.json'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install game dependencies
+        run: npm ci --prefix 'GTA/Проект'
+      - name: Test game
+        working-directory: 'GTA/Проект'
+        run: node --import tsx --test tests/*.test.ts
+      - name: Build offline game assets
+        run: npm run build --prefix 'GTA/Проект'
+      - name: Build signed installable debug APK
+        run: gradle --no-daemon -p android assembleDebug lintDebug
+      - name: Verify APK and stage delivery
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apk-delivery"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/apk-delivery/portside-android-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/apk-delivery/portside-android-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$RUNNER_TEMP/apk-delivery/portside-android-debug.apk"
+          python - <<'PY'
+          import os, zipfile, json, hashlib
+          from pathlib import Path
+          delivery = Path(os.environ['RUNNER_TEMP']) / 'apk-delivery'
+          apk = delivery / 'portside-android-debug.apk'
+          with zipfile.ZipFile(apk) as archive:
+              assert archive.testzip() is None
+              files = archive.namelist()
+              assert 'classes.dex' in files and 'assets/index.html' in files
+              assert any(p.startswith('assets/assets/') and p.endswith('.js') for p in files)
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          (delivery / 'portside-android-debug.apk.sha256').write_text(digest + '  portside-android-debug.apk\n')
+          (delivery / 'build-info.json').write_text(json.dumps({
+              'sourceCommit': os.environ['SOURCE_COMMIT'],
+              'workflowRun': os.environ['GITHUB_RUN_ID'],
+              'sha256': digest, 'bytes': apk.stat().st_size,
+              'package': 'com.creepyside11.portside.debug',
+              'minimumAndroid': '8.0', 'buildType': 'debug', 'offline': True
+          }, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portside-android-apk
+          path: ${{ runner.temp }}/apk-delivery/
+          retention-days: 30
+      - name: Save APK in repository
+        run: |
+          git fetch origin main
+          # Do not publish an APK if its game or Android sources became outdated.
+          git diff --exit-code "$GITHUB_SHA" origin/main -- android 'GTA/Проект'
+          git checkout -B apk-delivery origin/main
+          mkdir -p apk
+          cp "$RUNNER_TEMP/apk-delivery/"* apk/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apk/portside-android-debug.apk apk/portside-android-debug.apk.sha256 apk/build-info.json
+          git commit -m 'Publish signed Android debug APK [skip ci]'
+          git push origin HEAD:main
