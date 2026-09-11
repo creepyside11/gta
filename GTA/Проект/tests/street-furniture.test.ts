@@ -6,6 +6,7 @@ import type { Point, Solid } from '../src/game/types';
 import { createWorld } from '../src/game/world';
 
 const furniture = (solids: Solid[]): Solid[] => solids.filter(solid => solid.id.startsWith('streetscape-'));
+const metroFurniture = (solids: Solid[]): Solid[] => solids.filter(solid => /^metro-.*-(tree|planter|bench|bin)-/.test(solid.id));
 
 /** The swept body must have clearance all the way between route waypoints. */
 function assertPathClear(path: Point[], radius: number, props: Solid[], label: string): void {
@@ -23,10 +24,10 @@ function assertPathClear(path: Point[], radius: number, props: Solid[], label: s
   }
 }
 
-test('the streetscape adds substantial, deterministic greenery and usable furniture throughout the city', () => {
+test('the streetscape adds substantial, deterministic greenery and usable furniture throughout the original city', () => {
   const world = createWorld();
   const added = furniture(world.obstacles);
-  assert.ok(added.length >= 300, 'the empty streets need a substantial citywide furnishing pass');
+  assert.ok(added.length >= 300, 'the original city needs a substantial furnishing pass');
   assert.deepEqual(furniture(createWorld().obstacles), added);
   assert.equal(new Set(world.obstacles.map(prop => prop.id)).size, world.obstacles.length);
   const kinds = ['tree', 'planter', 'bench', 'bin'] as const;
@@ -37,21 +38,22 @@ test('the streetscape adds substantial, deterministic greenery and usable furnit
     for (const kind of kinds) assert.ok(quadrant.some(prop => prop.kind === kind), `quadrant ${sx}/${sz} needs ${kind} props`);
   }
   for (const axis of ['x', 'z'] as const) for (const side of [-1, 1]) {
-    assert.ok(added.filter(prop => prop[axis] * side > 170).length >= 12, `${axis}/${side}: the outer neighborhoods also need new furnishings`);
+    assert.ok(added.filter(prop => prop[axis] * side > 170).length >= 12, `${axis}/${side}: the old outer neighborhoods also need furnishings`);
   }
 });
 
-test('both sides of every avenue receive furniture without occupying the road or continuous sidewalk', () => {
+test('legacy avenues retain furniture while each satellite city has its own local streetscape', () => {
   const world = createWorld();
   const added = furniture(world.obstacles);
+  const legacyRoads = world.roads.filter(road => Math.abs(road) <= 160);
   assert.ok(added.length > 0);
-  for (const road of world.roads) for (const axis of ['x', 'z'] as const) {
+  for (const road of legacyRoads) for (const axis of ['x', 'z'] as const) {
     for (const side of [-1, 1]) {
       const frontage = added.filter(prop => {
         const offset = (prop[axis] - road) * side;
         return offset > world.roadWidth / 2 && offset < world.roadWidth / 2 + 13;
       });
-      assert.ok(frontage.length >= 6, `avenue ${axis}=${road}, side ${side} needs furnishings along its frontage`);
+      assert.ok(frontage.length >= 6, `legacy avenue ${axis}=${road}, side ${side} needs furnishings along its frontage`);
     }
     const corridor = {
       x: axis === 'x' ? road : 0, z: axis === 'z' ? road : 0,
@@ -59,6 +61,12 @@ test('both sides of every avenue receive furniture without occupying the road or
       depth: axis === 'z' ? world.roadWidth + 7 : world.size, yaw: 0,
     };
     for (const prop of added) assert.equal(boxIntersects(prop, corridor), false, `${prop.id} blocks the road or sidewalk at ${axis}=${road}`);
+  }
+  const local = metroFurniture(world.obstacles);
+  for (const district of world.districts.filter(district => district.id !== 'portside-core')) {
+    const props = local.filter(prop => Math.abs(prop.x - district.x) <= district.width / 2 && Math.abs(prop.z - district.z) <= district.depth / 2);
+    assert.ok(props.length >= 4, `${district.name} needs its own trees and street furniture`);
+    assert.ok(new Set(props.map(prop => prop.kind)).size >= 2, `${district.name} needs more than one furniture type`);
   }
 });
 
