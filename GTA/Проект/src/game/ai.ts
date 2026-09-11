@@ -43,7 +43,6 @@ export function createVehicles(world: World = createWorld()): Vehicle[] {
     ];
     const models: Vehicle['model'][] = ['hatchback', 'truck', 'sedan', 'pickup', 'sport', 'hatchback', 'pickup', 'sport'];
     const colors = ['#7ba9ba', '#dca562', '#bd7b83', '#85ad93', '#ebbd54', '#9e99bd', '#d17861', '#acc0bd'];
-    // Two well-separated cars per edge keep the new roads busy from the start.
     for (let edge = 0; edge < perimeter.length; edge++) {
       const a = perimeter[edge], b = perimeter[(edge + 1) % perimeter.length];
       for (let slot = 0; slot < 2; slot++) {
@@ -72,7 +71,18 @@ export function createPedestrians(world: World = createWorld()): Pedestrian[] {
     if (sx * sz < 0) corners.reverse();
     loops.push(corners);
   }
-  if (world.roads.length > 3) {
+  const rectangle = (x0: number, z0: number, x1: number, z1: number): Point[] =>
+    [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
+  if (world.roads.includes(-400) && world.roads.includes(-320) && world.roads.includes(320) && world.roads.includes(400)) {
+    // Four local neighborhood loops put residents in each satellite city without making
+    // pedestrians cross the high-speed regional arterials between cities.
+    loops.push(
+      rectangle(331.3, 11.3, 388.7, 68.7),
+      rectangle(-388.7, -68.7, -331.3, -11.3).reverse(),
+      rectangle(-68.7, -388.7, -11.3, -331.3),
+      rectangle(11.3, 331.3, 68.7, 388.7).reverse(),
+    );
+  } else if (world.roads.length > 3) {
     const firstRoad = Math.min(...world.roads);
     const lastRoad = Math.max(...world.roads);
     const sidewalk = world.roadWidth / 2 + 2.3;
@@ -80,9 +90,6 @@ export function createPedestrians(world: World = createWorld()): Pedestrian[] {
     const centralRoads = world.roads.filter(road => road !== firstRoad && road !== lastRoad);
     const left = centralRoads[0] + sidewalk;
     const right = centralRoads[centralRoads.length - 1] - sidewalk;
-    const rectangle = (x0: number, z0: number, x1: number, z1: number): Point[] =>
-      [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
-    // Outer neighborhood loops follow the road pavements and their clear rear promenade.
     loops.push(
       rectangle(left, -edge, -sidewalk, firstRoad - sidewalk),
       rectangle(lastRoad + sidewalk, left, edge, -sidewalk),
