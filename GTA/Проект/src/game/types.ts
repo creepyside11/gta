@@ -21,10 +21,15 @@ export interface PoliceOfficer extends Point {
   state: 'riding' | 'engaging' | 'returning' | 'dead';
   fireCooldown: number; phase: number; deadAt: number | null;
 }
+export type EnvironmentAssetId =
+  | 'house-a' | 'house-b' | 'house-h' | 'house-i'
+  | 'tree-oak' | 'tree-palm' | 'tree-pine' | 'rock-large';
 export interface Solid extends Point {
   id: string; width: number; depth: number; height: number; yaw: number;
   kind: 'building' | 'tree' | 'barrier' | 'planter' | 'bench' | 'bin';
   color: string;
+  /** Optional CC0 GLB visual. The collider remains this Solid footprint. */
+  assetModel?: EnvironmentAssetId;
 }
 export type BuildingArchitecture = 'apartment' | 'warehouse' | 'office' | 'townhouse' | 'supermarket' | 'civic';
 export interface Building extends Solid {
