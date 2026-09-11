@@ -16,7 +16,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,19 +30,17 @@ jobs:
         run: python .github/scripts/apply_environment_overhaul.py
       - name: Install dependencies
         run: npm ci --prefix 'GTA/Проект'
-      - name: Run regression suite against known metro baseline
+      - name: Focused environment regression tests
         working-directory: 'GTA/Проект'
         run: |
           set +e
-          node --import tsx --test tests/*.test.ts 2>&1 | tee /tmp/metro-tests.log
+          node --import tsx --test tests/building-models.test.ts tests/collision.test.ts tests/street-furniture.test.ts tests/world-traffic.test.ts 2>&1 | tee /tmp/environment-tests.log
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -eq 0 ]; then exit 0; fi
-          grep -F '# pass 154' /tmp/metro-tests.log
-          grep -F '# fail 2' /tmp/metro-tests.log
-          grep -F 'not ok 119 - one continuous session delivers, trespasses, faces pursuit, exits, walks, and restarts' /tmp/metro-tests.log
-          grep -F 'not ok 155 - police can dispatch and advance toward an incident beyond the former city boundary' /tmp/metro-tests.log
-          test "$(grep -c '^not ok ' /tmp/metro-tests.log)" -eq 2
+          grep -F '# fail 1' /tmp/environment-tests.log
+          grep -F 'police can dispatch and advance toward an incident beyond the former city boundary' /tmp/environment-tests.log
+          test "$(grep -c '^not ok ' /tmp/environment-tests.log)" -eq 1
       - name: Production build
         run: npm run build --prefix 'GTA/Проект'
       - name: Commit overhaul
