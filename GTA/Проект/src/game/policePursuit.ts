@@ -19,7 +19,12 @@ export function policeCanSee(world: World, state: GameState, observer: Point, ow
   const car = state.vehicles.find(vehicle => vehicle.id === state.player.vehicleId);
   const target = car ?? state.player;
   const range = dist(observer, target);
-  if (range > (maximumRange ?? (state.police.wanted >= 3 ? car ? 105 : 82 : 62))) return false;
+  // A one-star patrol in the much larger metro has a shorter local sight radius,
+  // making district-to-district escapes possible without weakening high-level pursuits.
+  const defaultRange = state.police.wanted >= 3 ? car ? 105 : 82
+    : state.police.wanted === 2 ? 68
+    : world.size >= 700 ? 54 : 62;
+  if (range > (maximumRange ?? defaultRange)) return false;
   const origin = { x: observer.x, y: ownCar ? 1.65 : 1.72, z: observer.z };
   const vector = { x: target.x - observer.x, y: (car ? 1.5 : 1.3) - origin.y, z: target.z - observer.z };
   const length = Math.hypot(vector.x, vector.y, vector.z);
@@ -118,7 +123,6 @@ export function policeOfficerPath(world: World, state: GameState, from: Point, t
       costs[next] = cost; previous[next] = current;
     }
   }
-  // If traffic temporarily seals every route, wait at a reachable approach.
   const approach = points.map((point, index) => ({ point, index })).filter(({ index }) => index > 1 && Number.isFinite(costs[index]))
     .sort((a, b) => dist(a.point, target) - dist(b.point, target))[0];
   const route: Point[] = [];
