@@ -17,9 +17,9 @@ export function createVehicles(world: World = createWorld()): Vehicle[] {
   const inner: Point[] = [{ x: -4, z: -84 }, { x: -4, z: -4 }, { x: 84, z: -4 }, { x: 84, z: -84 }];
   const vehicles = [
     vehicle(MISSION_CAR_ID, 'mission', 6, 40, Math.PI, '#f6c452'),
-    vehicle('parked-coral', 'parked', -6, 105, 0, '#dd785e', [], 0, 'sport'),
-    vehicle('parked-mint', 'parked', 86, 110, Math.PI, '#67b5a5', [], 0, 'pickup'),
-    vehicle('parked-cream', 'parked', -110, -86, Math.PI / 2, '#e5ded0', [], 0, 'truck'),
+    vehicle('parked-bmw-m5-f90', 'parked', -6, 105, 0, '#4b6f95', [], 0, 'bmw-m5-f90'),
+    vehicle('parked-mercedes-g63', 'parked', 86, 110, Math.PI, '#22282d', [], 0, 'mercedes-g63'),
+    vehicle('parked-nissan-gtr-r35', 'parked', -110, -86, Math.PI / 2, '#b84c45', [], 0, 'nissan-gtr-r35'),
     vehicle('traffic-0', 'traffic', 76, -43, 0, '#c5604b', outer, 1),
     vehicle('traffic-1', 'traffic', 76, 49, 0, '#e8d7b3', outer, 1, 'truck'),
     vehicle('traffic-2', 'traffic', -22, 76, -Math.PI / 2, '#7da8b7', outer, 2, 'hatchback'),
