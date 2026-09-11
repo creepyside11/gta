@@ -12,7 +12,7 @@ const officer = (x = 0, z = 12): PoliceOfficer => ({
   state: 'engaging', fireCooldown: 0, phase: 0, deadAt: null,
 });
 function scene(people: Pedestrian[] = []) {
-  const world: World = { size: 200, roads: [0], roadWidth: 18, buildings: [], obstacles: [],
+  const world: World = { size: 200, roads: [0], roadWidth: 18, buildings: [], obstacles: [], districts: [],
     pickup: { x: 90, z: 90 }, destination: { x: 90, z: -90 }, restricted: { x: -90, z: -90, radius: 5 } };
   const state: GameState = {
     time: 0, player: { x: 0, z: 0, yaw: 0, vehicleId: null, moving: false }, pedestrians: people, vehicles: [],
