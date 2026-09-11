@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Vehicle } from '../game/types';
 import { VEHICLE_SPECS } from '../game/vehicles';
+import { attachRealVehicleAsset, isRealVehicleModel, realVehicleFallback } from './RealVehicleModels';
 
 export type Shape = 'box' | 'cylinder' | 'sphere' | 'cone' | 'cabin';
 export type CarNode = {
@@ -28,6 +29,15 @@ export function createCabinGeometry(): THREE.BufferGeometry {
 
 /** Model space is in metres, facing +Z, and stays inside the simulation footprint. */
 export function createVehicleModel(v: Vehicle, part: VehiclePart): CarNode {
+  if (isRealVehicleModel(v.model)) {
+    const fallback = createVehicleModel({ ...v, model: realVehicleFallback(v.model) }, part);
+    const root = new THREE.Group();
+    root.name = `${v.model}-${v.id}`;
+    root.add(fallback.root);
+    attachRealVehicleAsset(root, fallback.root, v.model);
+    return { ...fallback, root, wheelRadius: VEHICLE_SPECS[v.model].wheelRadius };
+  }
+
   const root = new THREE.Group();
   root.name = `${v.model}-${v.id}`;
   const wheels: THREE.Group[] = [], frontWheels: THREE.Group[] = [];

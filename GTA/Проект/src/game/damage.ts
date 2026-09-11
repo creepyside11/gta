@@ -1,7 +1,16 @@
 import { clamp, type Box } from './collision';
 import type { Point, Vehicle, VehicleDamage } from './types';
 
-export const VEHICLE_MASS = { sedan: 1450, truck: 4800, pickup: 2200, hatchback: 1100, sport: 1350 };
+export const VEHICLE_MASS: Record<Vehicle['model'], number> = {
+  sedan: 1450,
+  truck: 4800,
+  pickup: 2200,
+  hatchback: 1100,
+  sport: 1350,
+  'bmw-m5-f90': 1900,
+  'mercedes-g63': 2550,
+  'nissan-gtr-r35': 1750,
+};
 export function freshDamage(): VehicleDamage {
   return { integrity: 1, front: 0, rear: 0, left: 0, right: 0, engine: 1,
     driftX: 0, driftZ: 0, revision: 0, lastImpact: -100, impactEnergy: 0 };

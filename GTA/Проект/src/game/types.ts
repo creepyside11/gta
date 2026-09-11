@@ -37,7 +37,7 @@ export interface World {
   buildings: Building[]; obstacles: Solid[];
   pickup: Point; destination: Point; restricted: Point & { radius: number };
 }
-export type VehicleModel = 'sedan' | 'truck' | 'pickup' | 'hatchback' | 'sport';
+export type VehicleModel = 'sedan' | 'truck' | 'pickup' | 'hatchback' | 'sport' | 'bmw-m5-f90' | 'mercedes-g63' | 'nissan-gtr-r35';
 export interface VehicleDamage {
   integrity: number; front: number; rear: number; left: number; right: number; engine: number;
   driftX: number; driftZ: number; revision: number; lastImpact: number; impactEnergy: number;

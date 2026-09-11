@@ -30,7 +30,10 @@ export function createCombatState(): CombatState {
 type Victim = Pedestrian | PoliceOfficer;
 interface TraceOptions { ignoreOfficerId?: string; ignoreVehicleId?: string; includePlayer?: boolean; sceneryOnly?: boolean }
 export interface BulletHit { point: Point3; distance: number; id: string | null; kind: 'scenery' | 'pedestrian' | 'officer' | 'player' | 'miss' }
-const VEHICLE_HEIGHT = { sedan: 1.95, truck: 3.55, pickup: 2.15, hatchback: 1.9, sport: 1.65 };
+const VEHICLE_HEIGHT = {
+  sedan: 1.95, truck: 3.55, pickup: 2.15, hatchback: 1.9, sport: 1.65,
+  'bmw-m5-f90': 1.9, 'mercedes-g63': 2.32, 'nissan-gtr-r35': 1.55,
+};
 
 function normalized(vector: Point3): Point3 | null {
   if (![vector.x, vector.y, vector.z].every(Number.isFinite)) return null;
