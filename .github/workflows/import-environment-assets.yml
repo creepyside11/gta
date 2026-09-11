@@ -5,6 +5,7 @@ on:
     branches: ['feat/vice-city-scale-map']
     paths:
       - '.github/workflows/import-environment-assets.yml'
+      - '.github/scripts/import_environment_assets.sh'
 
 permissions:
   contents: write
@@ -29,4 +30,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add 'GTA/Проект/public/models/environment'
           git commit -m 'Import curated CC0 city and nature models'
+          git pull --rebase origin ${GITHUB_REF_NAME}
           git push origin HEAD:${GITHUB_REF_NAME}
