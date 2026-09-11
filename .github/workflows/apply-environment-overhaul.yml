@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: environment-overhaul
+  cancel-in-progress: true
+
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -47,4 +51,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add 'GTA/Проект/src/game/world.ts' 'GTA/Проект/src/render/GameRenderer.ts' 'GTA/Проект/src/render/EnvironmentModels.ts'
           git commit -m 'Fill metro map with CC0 neighborhoods and vegetation'
+          git pull --rebase origin ${GITHUB_REF_NAME}
           git push origin HEAD:${GITHUB_REF_NAME}
