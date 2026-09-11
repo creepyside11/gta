@@ -32,9 +32,13 @@ export interface Building extends Solid {
   /** Absent on the original downtown blocks, which retain their apartment models. */
   architecture?: BuildingArchitecture;
 }
+export type DistrictKind = 'downtown' | 'beach' | 'industrial' | 'residential' | 'airport';
+export interface WorldDistrict extends Point {
+  id: string; name: string; width: number; depth: number; kind: DistrictKind;
+}
 export interface World {
   size: number; roads: number[]; roadWidth: number;
-  buildings: Building[]; obstacles: Solid[];
+  buildings: Building[]; obstacles: Solid[]; districts: WorldDistrict[];
   pickup: Point; destination: Point; restricted: Point & { radius: number };
 }
 export type VehicleModel = 'sedan' | 'truck' | 'pickup' | 'hatchback' | 'sport' | 'bmw-m5-f90' | 'mercedes-g63' | 'nissan-gtr-r35';
