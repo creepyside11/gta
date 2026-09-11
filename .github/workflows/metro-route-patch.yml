@@ -1,0 +1,37 @@
+name: Apply metro getaway route patch
+
+on:
+  push:
+    branches: [feat/vice-city-scale-map]
+    paths:
+      - '.github/workflows/metro-route-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/vice-city-scale-map
+      - name: Extend the integration getaway into the regional highway
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('GTA/Проект/tests/simulation.test.ts')
+          text = path.read_text()
+          old = """    { x: 0, z: -120 }, { x: 80, z: -120 }, { x: 80, z: 80 },\n  ], { maxSeconds: 100, cruising: 25, until: () => {"""
+          new = """    { x: 0, z: -120 }, { x: 80, z: -120 }, { x: 80, z: 80 },\n    { x: 80, z: 160 }, { x: 80, z: 260 }, { x: 80, z: 320 }, { x: 80, z: 400 },\n  ], { maxSeconds: 130, cruising: 25, until: () => {"""
+          if old not in text:
+              raise SystemExit('expected integration route block not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit route update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'GTA/Проект/tests/simulation.test.ts'
+          git commit -m 'Extend pursuit escape into metro highway'
+          git push origin HEAD:feat/vice-city-scale-map
