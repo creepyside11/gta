@@ -1,3 +1,4 @@
+import { planTrafficBypass, trafficPoseClear, type TrafficPose } from './traffic';
 import { contactNormal, driveEfficiency, resolveVehicleImpact } from './damage';
 import { angleDelta, boxIntersects, circleIntersectsBox, clamp, dist } from './collision';
 import { createPedestrians, createVehicles, MISSION_CAR_ID, routeToTarget, steerToward } from './ai';
@@ -34,6 +35,7 @@ export class Simulation implements SimulationApi {
   private officerRoutes = new Map<string, { points: Point[]; waypoint: number; remaining: number }>();
   private policeDriving = new Map<string, { reverse: number; side: number; avoidance: Point | null; avoidTime: number }>();
   private policeVehicleMovingUntil = 0;
+  private trafficDriving = new Map<string, { wait: number; retry: number; path: TrafficPose[]; index: number; reverseNeeded: boolean }>();
 
   getControlled(): Point & { yaw: number } { return this.controlledCar() ?? this.state.player; }
 
@@ -246,8 +248,60 @@ export class Simulation implements SimulationApi {
     }
   }
 
+  private trafficBypass(car: Vehicle, dt: number): boolean {
+    let memory = this.trafficDriving.get(car.id);
+    if (!memory) { memory = { wait: 0, retry: 0, path: [], index: 0, reverseNeeded: false }; this.trafficDriving.set(car.id, memory); }
+    memory.retry = Math.max(0, memory.retry - dt);
+    if (memory.path.length) {
+      const goal = memory.path[memory.index];
+      if (!goal) { memory.path = []; memory.wait = 0; return false; }
+      const distance = dist(car, goal);
+      const lookIndex = Math.min(memory.path.length - 1, memory.index + Math.ceil((.6 + car.speed * car.speed / 16) / .35));
+      const safe = memory.path.slice(memory.index, lookIndex + 1).every(p => trafficPoseClear(this.world, this.state, car, p));
+      car.speed += clamp((safe ? 4.5 * driveEfficiency(car) : 0) - car.speed, -12 * dt, 4 * dt);
+      const t = distance > .001 ? Math.min(1, Math.max(0, car.speed) * dt / distance) : 1;
+      const pose = { x: car.x + (goal.x - car.x) * t, z: car.z + (goal.z - car.z) * t,
+        yaw: car.yaw + angleDelta(car.yaw, goal.yaw) * t };
+      if (trafficPoseClear(this.world, this.state, car, pose)) {
+        car.steer = clamp(angleDelta(car.yaw, goal.yaw) * 3, -.5, .5);
+        car.x = pose.x; car.z = pose.z; car.yaw = pose.yaw;
+        if (t >= 1) memory.index++;
+      } else car.speed = 0;
+      return true;
+    }
+    const f = { x: Math.sin(car.yaw), z: Math.cos(car.yaw) }, r = { x: f.z, z: -f.x };
+    let obstacle: Vehicle | undefined, nearest = Infinity;
+    for (const other of this.state.vehicles) {
+      if (!other.active || other.id === car.id) continue;
+      const dx = other.x - car.x, dz = other.z - car.z;
+      const along = dx * f.x + dz * f.z, across = Math.abs(dx * r.x + dz * r.z);
+      const sideExtent = Math.abs(Math.cos(other.yaw - car.yaw)) * other.width / 2 + Math.abs(Math.sin(other.yaw - car.yaw)) * other.depth / 2;
+      if (along > 0 && along < 30 && along < nearest && across < car.width / 2 + sideExtent + .6) { obstacle = other; nearest = along; }
+    }
+    if (!obstacle || Math.abs(obstacle.speed) > .8) { memory.wait = 0; return false; }
+    memory.wait += dt;
+    if (memory.wait > .8 && memory.retry <= 0) {
+      memory.retry = .8;
+      const path = planTrafficBypass(this.world, this.state, car, obstacle);
+      if (path) { memory.path = path; memory.index = 1; memory.reverseNeeded = false; car.speed = Math.min(car.speed, 4.5); return true; }
+      const back = Math.max(0, 23 - nearest);
+      const setup = { ...car, x: car.x - f.x * back, z: car.z - f.z * back };
+      memory.reverseNeeded = back > 0 && trafficPoseClear(this.world, this.state, car, setup)
+        && planTrafficBypass(this.world, this.state, setup, obstacle) !== null;
+    }
+    // A driver boxed in near the bumper needs room for a lane change. Reverse slowly,
+    // checking the full footprint (including pedestrians and the vehicle behind).
+    if (memory.reverseNeeded && memory.wait > 2 && nearest < 23) {
+      if (car.speed > .1) { car.speed = Math.max(0, car.speed - 12 * dt); return true; }
+      const pose = { x: car.x - f.x * 1.6 * dt, z: car.z - f.z * 1.6 * dt, yaw: car.yaw };
+      if (trafficPoseClear(this.world, this.state, car, pose, false, 0)) { car.x = pose.x; car.z = pose.z; car.speed = -1.6; return true; }
+    }
+    return false;
+  }
+
   private followRoute(car: Vehicle, dt: number, speed: number, loop = true): void {
-    if (!car.route.length) { car.speed = 0; return; }
+    if (!car.route.length) { car.speed = 0; this.trafficDriving.delete(car.id); return; }
+    if (this.trafficBypass(car, dt)) return;
     let target = car.route[car.waypoint];
     if (dist(car, target) < 3.1) {
       if (car.waypoint + 1 < car.route.length) car.waypoint++;
@@ -271,13 +325,7 @@ export class Simulation implements SimulationApi {
       car.yaw = oldYaw;
       this.applyCollision(car, blocked, x, z, oldYaw);
       car.blocked += dt;
-      // A short, collision-tested backoff gives turning cars room at junctions.
-      if (car.blocked > 2.5 && car.blocked < 3.7 && blocked !== 'player' && blocked !== 'pedestrian') {
-        const bx = car.x - Math.sin(car.yaw) * 1.7 * dt;
-        const bz = car.z - Math.cos(car.yaw) * 1.7 * dt;
-        if (!this.vehicleBlock(car, bx, bz, car.yaw)) { car.x = bx; car.z = bz; }
-      }
-      if (car.blocked > 5) car.blocked = 1;
+
     }
   }
 
@@ -838,6 +886,7 @@ export class Simulation implements SimulationApi {
     s.officers = [];
     this.officerRoutes.clear();
     this.policeDriving.clear();
+    this.trafficDriving.clear();
     this.policeVehicleMovingUntil = 0;
     const candidates = [40, 35, 45, 30, 50, 25, 55, 20, 60].map(z => ({ x: 6, z }));
     const oldPlayer = { x: s.player.x, z: s.player.z };

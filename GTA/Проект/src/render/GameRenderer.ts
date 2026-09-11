@@ -1,3 +1,4 @@
+import { CrowdLOD, usesDetailedPerson } from './CrowdLOD';
 import { updateVehicleDamage, disposeVehicleDamage } from './VehicleDamageVisual';
 import * as THREE from 'three';
 import type { AimRay, Building, GameState, InputFrame, Vehicle, WeaponId, World } from '../game/types';
@@ -64,13 +65,7 @@ export class GameRenderer {
   private disposed = false;
   private readonly mobile: boolean;
   private readonly dynamicCullDistance: number;
-  private readonly ambientCars: THREE.InstancedMesh;
-  private readonly ambientPeople: THREE.InstancedMesh;
-  private readonly ambientMatrix = new THREE.Matrix4();
-  private readonly ambientPosition = new THREE.Vector3();
-  private readonly ambientQuaternion = new THREE.Quaternion();
-  private readonly ambientScale = new THREE.Vector3();
-  private readonly ambientUp = new THREE.Vector3(0, 1, 0);
+  private readonly crowd: CrowdLOD;
   private readonly waterWorld: WaterWorld;
 
   constructor(host: HTMLElement, world: World, state: GameState) {
@@ -116,21 +111,8 @@ export class GameRenderer {
     this.flushBatches();
     this.buildAtmosphere();
     if (this.mobile) this.clouds.visible = false;
-    this.ambientCars = new THREE.InstancedMesh(this.geometries.box, this.material('#81949b', .92), this.mobile ? 16 : 28);
-    this.ambientCars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.ambientCars.castShadow = false;
-    this.ambientCars.receiveShadow = false;
-    this.ambientCars.frustumCulled = false;
-    this.scene.add(this.ambientCars);
-    this.ambientPeople = new THREE.InstancedMesh(this.geometries.cylinder, this.material('#f0c9a6', .95), this.mobile ? 72 : 120);
-    this.ambientPeople.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    const crowdColors = ['#d96f62', '#5d849c', '#d7ae55', '#6d9a75', '#9a759d', '#54726d', '#c88763', '#7380a3'];
-    for (let i = 0; i < this.ambientPeople.count; i++) this.ambientPeople.setColorAt(i, new THREE.Color(crowdColors[i % crowdColors.length]));
-    if (this.ambientPeople.instanceColor) this.ambientPeople.instanceColor.needsUpdate = true;
-    this.ambientPeople.castShadow = false;
-    this.ambientPeople.receiveShadow = true;
-    this.ambientPeople.frustumCulled = false;
-    this.scene.add(this.ambientPeople);
+    this.crowd = new CrowdLOD(state.pedestrians.length);
+    this.scene.add(this.crowd.root);
 
     const ringMaterial = new THREE.MeshBasicMaterial({ color: '#ffdb58', transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false });
     this.markerRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.6, 48), ringMaterial);
@@ -748,7 +730,7 @@ export class GameRenderer {
 
   private animateDead(node: PersonNode, x: number, z: number, yaw: number, age: number) {
     const fall = THREE.MathUtils.smoothstep(age, 0, .28);
-    node.root.visible = age < 25;
+    node.root.visible = true;
     node.root.position.set(x, .11, z);
     node.root.rotation.y = yaw;
     node.body.position.set(0, .29 * fall, 0);
@@ -818,12 +800,11 @@ export class GameRenderer {
     }
     for (const [id, node] of this.cars) if (!ids.has(id)) { disposeVehicleDamage(node); this.scene.remove(node.root); this.cars.delete(id); }
     const personIds = new Set<string>();
-    const pedestrianCullSq = cullDistanceSq * .72;
+    this.crowd.update(state.pedestrians, state.player, state.time);
     for (const p of state.pedestrians) {
       personIds.add(p.id);
-      const dx = p.x - state.player.x, dz = p.z - state.player.z;
       let node = this.people.get(p.id);
-      if (dx * dx + dz * dz > pedestrianCullSq) { if (node) node.root.visible = false; continue; }
+      if (!usesDetailedPerson(p, state.player)) { if (node) node.root.visible = false; continue; }
       if (!node) { node = this.makePerson(p.color); this.people.set(p.id, node); this.scene.add(node.root); }
       if (p.state === 'dead') this.animateDead(node, p.x, p.z, p.yaw, state.time - (p.deadAt ?? state.time));
       else this.animatePerson(node, p.x, p.z, p.yaw, p.phase, p.state !== 'waiting', p.state === 'fleeing');
@@ -864,7 +845,6 @@ export class GameRenderer {
     this.player.root.visible = !state.player.vehicleId;
     this.updateMarker(state);
     this.updateShots(state);
-    this.updateAmbientActivity(state);
     this.waterWorld.update(state.time);
     if (!this.mobile) {
       this.clouds.rotation.y = state.time * .00035;
@@ -873,55 +853,6 @@ export class GameRenderer {
       this.gulls.children.forEach((bird, i) => { bird.rotation.z = Math.sin(state.time * 2.6 + i) * .12; });
     }
     this.renderer.render(this.scene, this.camera);
-  }
-
-  private updateAmbientActivity(state: GameState) {
-    const roads = this.world.roads;
-    const half = this.world.size / 2 - 12;
-    const span = half * 2;
-    for (let i = 0; i < this.ambientCars.count; i++) {
-      const axis = i % 2;
-      const direction = i % 4 < 2 ? 1 : -1;
-      const road = roads[(i * 3 + 1) % roads.length];
-      const lane = (i % 8 < 4 ? 1 : -1) * this.world.roadWidth * .2;
-      const speed = 6.2 + (i % 5) * .55;
-      const raw = state.time * speed * direction + i * 31.7;
-      const along = ((raw % span) + span) % span - half;
-      const x = axis ? along : road + lane;
-      const z = axis ? road + lane : along;
-      const dx = x - state.player.x, dz = z - state.player.z;
-      this.ambientPosition.set(x, .43, z);
-      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI));
-      if (dx * dx + dz * dz < 2304) this.ambientScale.setScalar(0);
-      else this.ambientScale.set(1.05, .65, 2.2);
-      this.ambientMatrix.compose(this.ambientPosition, this.ambientQuaternion, this.ambientScale);
-      this.ambientCars.setMatrixAt(i, this.ambientMatrix);
-    }
-    this.ambientCars.instanceMatrix.needsUpdate = true;
-    const sidewalk = this.world.roadWidth / 2 + 2.25;
-    const promenade = this.world.size / 2 - 4.4;
-    for (let i = 0; i < this.ambientPeople.count; i++) {
-      const axis = i % 2;
-      const direction = i % 3 ? 1 : -1;
-      const road = roads[(i * 7 + 2) % roads.length];
-      const side = i % 4 < 2 ? 1 : -1;
-      const speed = 1.05 + (i % 6) * .08;
-      const raw = state.time * speed * direction + i * 17.3;
-      const along = ((raw % span) + span) % span - half;
-      const waterfront = i % 5 === 0;
-      const coastSide = i % 4;
-      const x = waterfront ? (coastSide < 2 ? (coastSide ? promenade : -promenade) : along) : axis ? along : road + side * sidewalk;
-      const z = waterfront ? (coastSide < 2 ? along : (coastSide === 2 ? promenade : -promenade)) : axis ? road + side * sidewalk : along;
-      const dx = x - state.player.x, dz = z - state.player.z;
-      this.ambientPosition.set(x, .78, z);
-      const heading = waterfront ? (coastSide < 2 ? (direction > 0 ? 0 : Math.PI) : (direction > 0 ? Math.PI / 2 : -Math.PI / 2)) : axis ? (direction > 0 ? Math.PI / 2 : -Math.PI / 2) : (direction > 0 ? 0 : Math.PI);
-      this.ambientQuaternion.setFromAxisAngle(this.ambientUp, heading);
-      if (dx * dx + dz * dz < 324) this.ambientScale.setScalar(0);
-      else this.ambientScale.set(.24, 1.35, .24);
-      this.ambientMatrix.compose(this.ambientPosition, this.ambientQuaternion, this.ambientScale);
-      this.ambientPeople.setMatrixAt(i, this.ambientMatrix);
-    }
-    this.ambientPeople.instanceMatrix.needsUpdate = true;
   }
 
   private updateMarker(state: GameState) {
@@ -988,6 +919,7 @@ export class GameRenderer {
     for (const node of this.cars.values()) disposeVehicleDamage(node);
     if (this.disposed) return;
     this.disposed = true;
+    this.crowd.dispose();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.scene.traverse(o => {
       if (o instanceof THREE.InstancedMesh) o.dispose();

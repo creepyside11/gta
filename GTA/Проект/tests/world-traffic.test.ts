@@ -18,7 +18,7 @@ test('the expanded city has deterministic traffic and clear pedestrians in every
   assert.deepEqual(createPedestrians(), pedestrians);
   assert.equal(vehicles.filter(v => v.kind === 'traffic').length, 16);
   assert.equal(vehicles.filter(v => v.kind === 'parked').length, 7);
-  assert.equal(pedestrians.length, 40);
+  assert.equal(pedestrians.length, 72);
   assert.equal(new Set(vehicles.map(v => v.id)).size, vehicles.length);
   assert.equal(new Set(pedestrians.map(p => p.id)).size, pedestrians.length);
   const addedTraffic = vehicles.filter(v => v.kind === 'traffic' && Number(v.id.slice(8)) >= 8);

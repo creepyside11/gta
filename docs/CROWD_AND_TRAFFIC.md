@@ -1,0 +1,7 @@
+# Persistent citizens and traffic bypass
+
+The city now uses 72 simulated pedestrians. Decorative people that vanished near the player have been removed, along with non-interactive decorative traffic. Every visible citizen has an identity, route, health and collision behavior. Beyond 70 metres the same citizen is drawn with batched humanoid geometry; the detailed and distant representations share the same position and switch at one threshold. Fallen citizens remain visible until the simulation resets them.
+
+Civilian drivers plan a smooth bypass of stationary vehicles, including a vehicle parked by the player, then return to their route. The planner checks the complete vehicle footprint against the road, buildings, street furniture, other vehicles and people. Approaching vehicles reserve their projected path. Drivers wait when no safe passing lane exists. A driver stopped too close may brake and slowly reverse to make room, only when a feasible bypass exists and the space behind is clear. Recovery uses exact collision bounds so an existing small bumper gap does not trap the car inside its usual safety margin.
+
+Automated coverage includes sedans, trucks, occupied passing lanes, completely blocked roads, a person entering the maneuver, close-bumper recovery, stable pedestrian identities and the detailed/distant transition. Device frame rate and visual appearance still need validation on a physical phone/tablet.

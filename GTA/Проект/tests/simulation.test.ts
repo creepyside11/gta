@@ -125,14 +125,14 @@ test('crashing into another solid vehicle causes heat and leaves both bodies sep
   assert.ok(obstacle.damage && obstacle.damage.integrity < 1);
 });
 
-test('traffic brakes for a parked blocker and resumes without teleporting once clear', () => {
+test('traffic waits for a fully blocked road and resumes without teleporting once clear', () => {
   const sim = new Simulation();
   for (const v of sim.state.vehicles) v.active = false;
   sim.state.pedestrians = [];
   const traffic = sim.state.vehicles.find(v => v.id === 'traffic-0')!;
   traffic.active = true;
   const blocker = sim.state.vehicles.find(v => v.id === 'parked-coral')!;
-  Object.assign(blocker, { x: 76, z: -30, yaw: 0, active: true });
+  Object.assign(blocker, { x: 76, z: -30, yaw: 0, width: sim.world.roadWidth * 2, active: true });
   advance(sim, 4);
   assert.ok(traffic.z > -40 && traffic.z < -34.6);
   assert.ok(Math.abs(traffic.speed) < 0.5);

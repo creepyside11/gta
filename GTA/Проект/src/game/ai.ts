@@ -91,12 +91,12 @@ export function createPedestrians(world: World = createWorld()): Pedestrian[] {
     );
   }
   const colors = ['#ee9973', '#7d9cae', '#edcb73', '#9bbb99', '#c9a2b6', '#3f6974'];
-  return loops.flatMap((route, loop) => Array.from({ length: 5 }, (_, index) => {
+  return loops.flatMap((route, loop) => Array.from({ length: 9 }, (_, index) => {
     const edge = index % 4;
     const a = route[edge];
     const b = route[(edge + 1) % 4];
-    const t = index === 4 ? 0.76 : 0.14 + index * 0.13;
-    return { id: `ped-${loop * 5 + index}`, x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t,
+    const t = index < 5 ? index === 4 ? .76 : .14 + index * .13 : .82;
+    return { id: `ped-${index < 5 ? loop * 5 + index : loops.length * 5 + loop * 4 + index - 5}`, x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t,
       yaw: Math.atan2(b.x - a.x, b.z - a.z), color: colors[(loop * 3 + index) % colors.length],
       speed: 1.15 + ((index * 7 + loop * 3) % 9) * 0.085, route, waypoint: (edge + 1) % 4,
       phase: index * 1.9 + loop * 0.8, state: 'walking' as const, timer: 0, health: 100, deadAt: null };
