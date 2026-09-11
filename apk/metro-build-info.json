@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "c4a843b0ec270cbf6c9600c46ed0190ac96b424f",
+  "workflowRun": "34577767589",
+  "sha256": "985dd6ce31a91d07537f4237715cd972eb3af20033d15e1a741cb3db749855ad",
+  "bytes": 1453520,
+  "package": "com.creepyside11.portside.debug",
+  "minimumAndroid": "8.0",
+  "buildType": "debug",
+  "offline": true,
+  "map": "five-city metro"
+}
