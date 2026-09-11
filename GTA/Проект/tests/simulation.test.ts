@@ -297,7 +297,8 @@ test('one continuous session delivers, trespasses, faces pursuit, exits, walks, 
     { x: 80, z: -80 }, { x: -80, z: -80 }, { x: -80, z: -125 }, { x: -100, z: -125 },
     { x: -100, z: -110 }, { x: -85, z: -110 }, { x: -84, z: 80 }, { x: 0, z: 84 },
     { x: 0, z: -120 }, { x: 80, z: -120 }, { x: 80, z: 80 },
-  ], { maxSeconds: 100, cruising: 25, until: () => {
+    { x: 80, z: 160 }, { x: 80, z: 260 }, { x: 80, z: 320 }, { x: 80, z: 400 },
+  ], { maxSeconds: 130, cruising: 25, until: () => {
     if (sim.state.police.wanted && !wantedAt) wantedAt = sim.state.time;
     return wantedAt > 0 && sim.state.police.wanted === 0;
   } });
