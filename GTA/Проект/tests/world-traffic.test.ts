@@ -101,7 +101,8 @@ test('police can dispatch and advance toward an incident beyond the former city 
   assert.ok(units.every(v => dist(v, target) > 40 && dist(v, target) < sim.world.size / 2),
     'three nearby units dispatch with space for concealed approaches');
   assert.ok(units.every(v => v.route.some(point => Math.max(Math.abs(point.x), Math.abs(point.z)) > 142)));
-  advance(sim, 5);
+  // Regional responders may start over a block away to avoid popping into view.
+  advance(sim, 9);
   assert.ok(units.every(v => dist(v, starts.get(v.id)!) > 8), 'outer patrols follow their road routes');
   assert.ok(units.some(v => dist(v, target) < 45), 'a patrol must close distance to the outer incident');
 });
