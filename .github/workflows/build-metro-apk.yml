@@ -63,6 +63,18 @@ jobs:
               assert 'classes.dex' in names
               assert 'assets/index.html' in names
               assert any(p.startswith('assets/assets/') and p.endswith('.js') for p in names)
+              required = [
+                  'assets/models/environment/house-a.glb',
+                  'assets/models/environment/house-b.glb',
+                  'assets/models/environment/house-h.glb',
+                  'assets/models/environment/house-i.glb',
+                  'assets/models/environment/tree-oak.glb',
+                  'assets/models/environment/tree-palm.glb',
+                  'assets/models/environment/tree-pine.glb',
+                  'assets/models/environment/Textures/colormap.png',
+              ]
+              missing = [p for p in required if p not in names]
+              assert not missing, f'missing environment assets in APK: {missing}'
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
           (delivery / 'portside-metro-debug.apk.sha256').write_text(digest + '  portside-metro-debug.apk\n')
           (delivery / 'metro-build-info.json').write_text(json.dumps({
@@ -74,7 +86,8 @@ jobs:
               'minimumAndroid': '8.0',
               'buildType': 'debug',
               'offline': True,
-              'map': 'five-city metro'
+              'map': 'five-city metro',
+              'environment': 'water + beaches + CC0 houses and trees'
           }, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v4
@@ -93,5 +106,3 @@ jobs:
           git add apk/portside-metro-debug.apk apk/portside-metro-debug.apk.sha256 apk/metro-build-info.json
           git commit -m 'Publish metro Android APK [skip ci]' || exit 0
           git push origin HEAD:${GITHUB_REF_NAME}
-
-# Rebuild after metro World fixture update.
