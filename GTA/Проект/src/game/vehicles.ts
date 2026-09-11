@@ -16,4 +16,7 @@ export const VEHICLE_SPECS: Record<VehicleModel, VehicleSpec> = {
   pickup: { width: 2.5, depth: 5.8, wheelRadius: 0.54, label: 'Pickup', entryOffsetZ: 0.9 },
   hatchback: { width: 2.1, depth: 3.85, wheelRadius: 0.42, label: 'City Hatchback', entryOffsetZ: 0 },
   sport: { width: 2.3, depth: 4.7, wheelRadius: 0.43, label: 'Sport Coupe', entryOffsetZ: 0 },
+  'bmw-m5-f90': { width: 1.902, depth: 4.965, wheelRadius: 0.36, label: 'BMW M5 F90', entryOffsetZ: 0 },
+  'mercedes-g63': { width: 1.984, depth: 4.873, wheelRadius: 0.41, label: 'Mercedes-AMG G63', entryOffsetZ: 0 },
+  'nissan-gtr-r35': { width: 1.895, depth: 4.710, wheelRadius: 0.36, label: 'Nissan GT-R R35', entryOffsetZ: 0 },
 };
