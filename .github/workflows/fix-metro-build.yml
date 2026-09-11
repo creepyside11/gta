@@ -1,0 +1,37 @@
+name: Fix metro production build fixture
+
+on:
+  push:
+    branches: ['feat/vice-city-scale-map']
+    paths:
+      - '.github/workflows/fix-metro-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/vice-city-scale-map
+      - name: Add districts to combat test world
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('GTA/Проект/tests/combat.test.ts')
+          text = path.read_text()
+          old = "const world: World = { size: 200, roads: [0], roadWidth: 18, buildings: [], obstacles: [],\n    pickup: { x: 90, z: 90 }"
+          new = "const world: World = { size: 200, roads: [0], roadWidth: 18, buildings: [], obstacles: [], districts: [],\n    pickup: { x: 90, z: 90 }"
+          if old not in text:
+              raise SystemExit('expected combat World fixture not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit fixture fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'GTA/Проект/tests/combat.test.ts'
+          git commit -m 'Fix metro World test fixture for production build'
+          git push origin HEAD:feat/vice-city-scale-map
