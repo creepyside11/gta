@@ -1,0 +1,29 @@
+name: Real cars branch CI
+
+on:
+  push:
+    branches: [feat/real-cars-bmw-g63-gtr]
+    paths:
+      - 'GTA/Проект/**'
+      - '.github/workflows/real-cars-branch-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: 'GTA/Проект/package-lock.json'
+      - name: Install dependencies
+        run: npm ci --prefix 'GTA/Проект'
+      - name: Test
+        working-directory: 'GTA/Проект'
+        run: node --import tsx --test tests/*.test.ts
+      - name: Build
+        run: npm run build --prefix 'GTA/Проект'
