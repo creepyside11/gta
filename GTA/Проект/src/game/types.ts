@@ -38,7 +38,7 @@ export interface WorldDistrict extends Point {
 }
 export interface World {
   size: number; roads: number[]; roadWidth: number;
-  buildings: Building[]; obstacles: Solid[]; districts: WorldDistrict[];
+  buildings: Building[]; obstacles: Solid[]; districts?: WorldDistrict[];
   pickup: Point; destination: Point; restricted: Point & { radius: number };
 }
 export type VehicleModel = 'sedan' | 'truck' | 'pickup' | 'hatchback' | 'sport' | 'bmw-m5-f90' | 'mercedes-g63' | 'nissan-gtr-r35';
