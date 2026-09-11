@@ -1,44 +1,99 @@
 import * as THREE from 'three';
+import { Water } from 'three/addons/objects/Water.js';
 import type { World } from '../game/types';
 
 type Craft = { root: THREE.Group; phase: number; speed: number; rx: number; rz: number; wake: THREE.Mesh };
 
+/** Ocean, beaches and offshore life. Uses Three.js Water with an offline procedural normal map. */
 export class WaterWorld {
-  private readonly water: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private readonly water: Water;
   private readonly craft: Craft[] = [];
+  private readonly foam: THREE.Mesh[] = [];
+  private readonly shore = new THREE.Group();
 
   constructor(scene: THREE.Scene, world: World, mobile: boolean) {
-    const size = Math.max(1100, world.size + 720);
-    const geometry = new THREE.PlaneGeometry(size, size, mobile ? 30 : 56, mobile ? 30 : 56);
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        deepColor: { value: new THREE.Color('#287c8d') },
-        shallowColor: { value: new THREE.Color('#62c4c3') },
-        skyColor: { value: new THREE.Color('#c8eff1') },
-      },
-      vertexShader: 'uniform float time; varying float vWave; varying vec3 vWorld; void main(){ vec3 p=position; float w=sin(p.x*.036+time*1.15)*.13+cos(p.y*.031-time*.82)*.09+sin((p.x+p.y)*.018+time*.56)*.06; p.z+=w; vWave=w; vec4 world=modelMatrix*vec4(p,1.0); vWorld=world.xyz; gl_Position=projectionMatrix*viewMatrix*world; }',
-      fragmentShader: 'uniform float time; uniform vec3 deepColor; uniform vec3 shallowColor; uniform vec3 skyColor; varying float vWave; varying vec3 vWorld; void main(){ float bands=.5+.5*sin(vWorld.x*.075+vWorld.z*.052+time*1.7); float foam=smoothstep(.72,1.0,bands)*.18; vec3 base=mix(deepColor,shallowColor,clamp(.48+vWave*1.8,0.0,1.0)); float glint=pow(max(0.0,sin(vWorld.x*.024-time)*cos(vWorld.z*.021+time*.7)),10.0)*.42; vec3 color=mix(base,skyColor,glint+foam); gl_FragColor=vec4(color,.97); }',
-      transparent: true,
-      depthWrite: true,
-      side: THREE.DoubleSide,
+    const size = Math.max(1700, world.size + 900);
+    const normalMap = this.makeNormalMap(mobile ? 96 : 160);
+    this.water = new Water(new THREE.PlaneGeometry(size, size), {
+      textureWidth: mobile ? 256 : 512,
+      textureHeight: mobile ? 256 : 512,
+      waterNormals: normalMap,
+      sunDirection: new THREE.Vector3(-.45, .92, .38).normalize(),
+      sunColor: 0xffefd2,
+      waterColor: 0x116f83,
+      distortionScale: mobile ? 1.65 : 2.35,
+      fog: true,
     });
-    this.water = new THREE.Mesh(geometry, material);
     this.water.rotation.x = -Math.PI / 2;
-    this.water.position.y = -.82;
+    this.water.position.y = -.72;
     this.water.receiveShadow = true;
+    this.water.name = 'ocean-water';
     scene.add(this.water);
 
+    this.buildShore(scene, world);
+
     const edge = world.size / 2;
-    const craftCount = mobile ? 7 : 11;
+    const craftCount = mobile ? 6 : 10;
     for (let i = 0; i < craftCount; i++) {
       const yacht = i % 3 === 0;
       const root = yacht ? this.makeYacht(i) : this.makeBoat(i);
       const wake = this.makeWake(yacht);
       root.add(wake);
       scene.add(root);
-      this.craft.push({ root, wake, phase: i / craftCount * Math.PI * 2, speed: .055 + (i % 4) * .009, rx: edge + 38 + i % 3 * 17, rz: edge + 45 + (i * 2) % 4 * 14 });
+      this.craft.push({ root, wake, phase: i / craftCount * Math.PI * 2, speed: .055 + (i % 4) * .009, rx: edge + 42 + i % 3 * 18, rz: edge + 50 + (i * 2) % 4 * 15 });
     }
+  }
+
+  private makeNormalMap(size: number) {
+    const data = new Uint8Array(size * size * 4);
+    const sample = (x: number, y: number) =>
+      Math.sin(x * .31 + y * .09) * .55 + Math.sin(x * .11 - y * .27) * .3 + Math.cos((x + y) * .17) * .2;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const l = sample((x - 1 + size) % size, y), r = sample((x + 1) % size, y);
+      const d = sample(x, (y - 1 + size) % size), u = sample(x, (y + 1) % size);
+      const n = new THREE.Vector3((l - r) * .8, (d - u) * .8, 1).normalize();
+      const offset = (y * size + x) * 4;
+      data[offset] = Math.round((n.x * .5 + .5) * 255);
+      data[offset + 1] = Math.round((n.y * .5 + .5) * 255);
+      data[offset + 2] = Math.round((n.z * .5 + .5) * 255);
+      data[offset + 3] = 255;
+    }
+    const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  private buildShore(scene: THREE.Scene, world: World) {
+    const edge = world.size / 2;
+    this.shore.name = 'beaches-and-shore';
+    scene.add(this.shore);
+    const sand = new THREE.MeshStandardMaterial({ color: '#e6cb91', roughness: .98, metalness: 0 });
+    const wet = new THREE.MeshStandardMaterial({ color: '#c6ad78', roughness: .92, metalness: 0 });
+    const dune = new THREE.MeshStandardMaterial({ color: '#dcc184', roughness: 1, metalness: 0 });
+    const strip = (x: number, z: number, width: number, depth: number, material: THREE.Material, y = .075) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, .14, depth), material);
+      mesh.position.set(x, y, z); mesh.receiveShadow = true; this.shore.add(mesh); return mesh;
+    };
+
+    // Vice Beach gets a broad continuous beach between the last avenue and the ocean.
+    strip(edge - 29, 0, 58, 370, sand);
+    strip(edge - 4.5, 0, 9, 370, wet, .065);
+    // Other coasts get narrower public beaches so the square landmass no longer ends in bare concrete.
+    strip(-edge + 9, 0, 18, world.size - 34, dune);
+    strip(0, -edge + 9, world.size - 34, 18, sand);
+    strip(0, edge - 9, world.size - 34, 18, sand);
+
+    const foamMaterial = new THREE.MeshBasicMaterial({ color: '#e9fbf7', transparent: true, opacity: .3, depthWrite: false, side: THREE.DoubleSide });
+    const foamStrip = (x: number, z: number, width: number, depth: number) => {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), foamMaterial.clone());
+      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, -.64, z); this.shore.add(mesh); this.foam.push(mesh);
+    };
+    foamStrip(edge + 1.4, 0, 8, 370);
+    foamStrip(-edge - .8, 0, 5, world.size - 32);
+    foamStrip(0, -edge - .8, world.size - 32, 5);
+    foamStrip(0, edge + .8, world.size - 32, 5);
   }
 
   private mat(color: string, roughness = .72, metalness = .02) {
@@ -103,7 +158,12 @@ export class WaterWorld {
   }
 
   update(time: number) {
-    this.water.material.uniforms.time.value = time;
+    const uniforms = (this.water.material as THREE.ShaderMaterial).uniforms;
+    uniforms.time.value = time * .48;
+    this.foam.forEach((mesh, index) => {
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      material.opacity = .23 + Math.sin(time * 1.35 + index * 1.8) * .08;
+    });
     for (let i = 0; i < this.craft.length; i++) {
       const craft = this.craft[i];
       const angle = craft.phase + time * craft.speed;
@@ -111,7 +171,7 @@ export class WaterWorld {
       const z = Math.sin(angle) * craft.rz;
       const dx = -Math.sin(angle) * craft.rx;
       const dz = Math.cos(angle) * craft.rz;
-      craft.root.position.set(x, -.5 + Math.sin(time * 1.6 + i) * .055, z);
+      craft.root.position.set(x, -.43 + Math.sin(time * 1.6 + i) * .055, z);
       craft.root.rotation.y = Math.atan2(dx, dz);
       craft.root.rotation.z = Math.sin(time * 1.25 + i * .7) * .018;
       craft.root.rotation.x = Math.sin(time * 1.05 + i) * .012;
