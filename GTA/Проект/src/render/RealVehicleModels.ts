@@ -107,8 +107,9 @@ export function attachRealVehicleAsset(
   fallbackRoot: THREE.Group,
   model: RealVehicleModel,
 ): void {
-  void loadAsset(model).then(realModel => {
+  void loadAsset(model).then(template => {
     if (!root.parent && !fallbackRoot.parent) return;
+    const realModel = template.clone(true);
     realModel.name = `${model}-visual`;
     root.add(realModel);
     fallbackRoot.visible = false;
