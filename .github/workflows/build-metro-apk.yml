@@ -93,3 +93,5 @@ jobs:
           git add apk/portside-metro-debug.apk apk/portside-metro-debug.apk.sha256 apk/metro-build-info.json
           git commit -m 'Publish metro Android APK [skip ci]' || exit 0
           git push origin HEAD:${GITHUB_REF_NAME}
+
+# Rebuild after metro World fixture update.
