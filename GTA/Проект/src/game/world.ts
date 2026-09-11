@@ -1,6 +1,6 @@
 import { boxIntersects, circleIntersectsBox } from './collision';
 import { populateStreetFurniture } from './streetFurniture';
-import type { Building, BuildingArchitecture, Solid, World, WorldDistrict } from './types';
+import type { Building, BuildingArchitecture, EnvironmentAssetId, Solid, World, WorldDistrict } from './types';
 
 const PALETTE = ['#d6a38b', '#7aaba4', '#e3c89b', '#b8bfc0', '#d18e74', '#8ca9b7', '#c3ac91', '#9fb29c'];
 const LEGACY_SIZE = 284 * Math.SQRT2;
@@ -263,7 +263,7 @@ function populateMetroCities(world: World): void {
     return list[seed % list.length];
   };
 
-  const addMetroBuilding = (districtId: string, x: number, z: number, width: number, depth: number, seed: number, label?: string): void => {
+  const addMetroBuilding = (districtId: string, x: number, z: number, width: number, depth: number, seed: number, label?: string, assetModel?: EnvironmentAssetId): void => {
     const district = districtById(districtId);
     const architecture = architectureFor(district, seed);
     const heights: Record<BuildingArchitecture, number> = {
@@ -276,15 +276,16 @@ function populateMetroCities(world: World): void {
       width, depth, height: heights[architecture], yaw: 0,
       color: PALETTE[(seed + districtId.length) % PALETTE.length], style: seed % 4, architecture,
       ...(label ? { label } : {}),
+      ...(assetModel ? { assetModel } : {}),
     };
     if (clearMetro(building)) world.buildings.push(building);
   };
 
-  const addMetroProp = (districtId: string, x: number, z: number, kind: 'tree' | 'planter' | 'bench' | 'bin', seed: number, yaw = 0): void => {
+  const addMetroProp = (districtId: string, x: number, z: number, kind: 'tree' | 'planter' | 'bench' | 'bin', seed: number, yaw = 0, assetModel?: EnvironmentAssetId): void => {
     const sizes = { tree: [.85, .85, 5 + seed % 3], planter: [1.8, 2.6, .7], bench: [.8, 2.2, 1.4], bin: [.78, .78, 1.2] };
     const [width, depth, height] = sizes[kind];
     const colors = { tree: '#538b72', planter: '#c1ad8d', bench: '#b28a5b', bin: '#507b72' };
-    const prop: Solid = { id: `metro-${districtId}-${kind}-${propSerial++}`, kind, x, z, width, depth, height, yaw, color: colors[kind] };
+    const prop: Solid = { id: `metro-${districtId}-${kind}-${propSerial++}`, kind, x, z, width, depth, height, yaw, color: colors[kind], ...(assetModel ? { assetModel } : {}) };
     if (clearMetro(prop)) world.obstacles.push(prop);
   };
 
@@ -308,10 +309,11 @@ function populateMetroCities(world: World): void {
   const sideSlots = [-140, -100, -60, 20, 100, 140];
   sideSlots.forEach((along, index) => {
     const kind = index % 3 === 0 ? 'bench' : index % 3 === 1 ? 'tree' : 'planter';
-    addMetroProp('vice-beach', 292, along, kind, 100 + index, Math.PI / 2);
-    addMetroProp('west-harbor', -292, -along, kind, 110 + index, -Math.PI / 2);
-    addMetroProp('northside', -along, -292, kind, 120 + index, 0);
-    addMetroProp('sunport', along, 292, kind, 130 + index, Math.PI);
+    const isTree = kind === 'tree';
+    addMetroProp('vice-beach', 292, along, kind, 100 + index, Math.PI / 2, isTree ? 'tree-palm' : undefined);
+    addMetroProp('west-harbor', -292, -along, kind, 110 + index, -Math.PI / 2, isTree ? 'tree-oak' : undefined);
+    addMetroProp('northside', -along, -292, kind, 120 + index, 0, isTree ? 'tree-pine' : undefined);
+    addMetroProp('sunport', along, 292, kind, 130 + index, Math.PI, isTree ? 'tree-oak' : undefined);
   });
 
   // Landmark rows make the four satellite skylines readable from the long approaches.
@@ -323,4 +325,40 @@ function populateMetroCities(world: World): void {
   addMetroBuilding('northside', 120, -440, 40, 28, 156, 'ARENA');
   addMetroBuilding('sunport', -120, 440, 42, 28, 157, 'TERMINAL');
   addMetroBuilding('sunport', 120, 440, 42, 28, 158, 'AIR FREIGHT');
+
+  // Fill the previously empty diagonal quadrants with low-rise neighborhoods.
+  // Every house remains a simulation collider; the GLB only replaces the visual shell.
+  const houseAssets: EnvironmentAssetId[] = ['house-a', 'house-b', 'house-h', 'house-i'];
+  const neighborhoods: { x: number; z: number; district: string; tree: EnvironmentAssetId; seed: number }[] = [
+    { x: 240, z: -240, district: 'northside', tree: 'tree-pine', seed: 200 },
+    { x: -240, z: -240, district: 'northside', tree: 'tree-oak', seed: 240 },
+    { x: 240, z: 240, district: 'sunport', tree: 'tree-palm', seed: 280 },
+    { x: -240, z: 240, district: 'sunport', tree: 'tree-oak', seed: 320 },
+  ];
+  const homeOffsets = [-48, 0, 48];
+  for (const block of neighborhoods) {
+    let local = 0;
+    for (const dx of homeOffsets) for (const dz of homeOffsets) {
+      if (dx === 0 && dz === 0) continue;
+      const seed = block.seed + local++;
+      addMetroBuilding(
+        block.district, block.x + dx, block.z + dz,
+        20 + seed % 3 * 2, 18 + (seed + 1) % 3 * 2, seed,
+        undefined, houseAssets[seed % houseAssets.length],
+      );
+    }
+    const garden = [[0, 0], [-17, 0], [17, 0], [0, -17], [0, 17]] as const;
+    garden.forEach(([dx, dz], index) => addMetroProp(block.district, block.x + dx, block.z + dz, 'tree', block.seed + 30 + index, 0, block.tree));
+    for (const dx of [-64, 64]) for (const dz of [-64, 64])
+      addMetroProp(block.district, block.x + dx, block.z + dz, 'tree', block.seed + 40 + dx + dz, 0, block.tree);
+  }
+
+  // Continuous landscaping around the coastline makes long drives feel inhabited.
+  const coastBands = [-440, -360, -240, -120, -40, 40, 120, 240, 360, 440];
+  coastBands.forEach((along, index) => {
+    addMetroProp('vice-beach', edge - 25, along, 'tree', 400 + index, 0, 'tree-palm');
+    addMetroProp('west-harbor', -edge + 25, along, 'tree', 420 + index, 0, 'tree-oak');
+    addMetroProp('northside', along, -edge + 25, 'tree', 440 + index, 0, 'tree-pine');
+    addMetroProp('sunport', along, edge - 25, 'tree', 460 + index, 0, index % 2 ? 'tree-palm' : 'tree-oak');
+  });
 }

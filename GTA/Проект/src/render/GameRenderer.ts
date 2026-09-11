@@ -7,6 +7,7 @@ import { CameraRig } from './CameraRig';
 import { createWeaponModel, type WeaponNode } from './WeaponModels';
 import { buildSpecialBuilding } from './BuildingModels';
 import { WaterWorld } from './WaterWorld';
+import { EnvironmentModels } from './EnvironmentModels';
 
 type Batch = { geometry: THREE.BufferGeometry; material: THREE.Material; matrices: THREE.Matrix4[]; shadow: boolean };
 type ArmedArms = {
@@ -67,6 +68,7 @@ export class GameRenderer {
   private readonly dynamicCullDistance: number;
   private readonly crowd: CrowdLOD;
   private readonly waterWorld: WaterWorld;
+  private readonly environmentModels: EnvironmentModels;
 
   constructor(host: HTMLElement, world: World, state: GameState) {
     this.host = host;
@@ -104,8 +106,9 @@ export class GameRenderer {
     this.scene.add(this.sun, this.sun.target);
 
     this.buildGround();
-    world.buildings.forEach(b => this.buildBuilding(b));
+    world.buildings.forEach(b => { if (!b.assetModel) this.buildBuilding(b); });
     this.buildProps();
+    this.environmentModels = new EnvironmentModels(this.scene, world, this.mobile);
     this.buildHarbor();
     this.waterWorld = new WaterWorld(this.scene, world, this.mobile);
     this.flushBatches();
@@ -253,19 +256,8 @@ export class GameRenderer {
         this.batch('sphere', '#e5bf78', px, 4.22, pz + .25, .12, .12, .04, 0, false);
       }
     }
-    // Seawall, promenade, and rail posts define the edge of the playable island.
-    for (const sign of [-1, 1]) {
-      this.batch('box', '#e6dec8', sign * (half - 3.3), .09, 0, 6.6, .22, w.size, 0, false);
-      this.batch('box', '#e6dec8', 0, .1, sign * (half - 3.3), w.size, .22, 6.6, 0, false);
-      this.batch('box', '#f0e6cc', sign * (half + .2), -.28, 0, 1.2, 1.8, w.size + 2);
-      this.batch('box', '#f0e6cc', 0, -.28, sign * (half + .2), w.size + 2, 1.8, 1.2);
-      this.batch('box', '#789897', sign * (half - .7), 1.09, 0, .1, .1, w.size - 2);
-      this.batch('box', '#789897', 0, 1.09, sign * (half - .7), w.size - 2, .1, .1);
-      for (let n = -half + 3; n < half; n += 5) {
-        this.batch('box', '#789897', sign * (half - .7), .63, n, .12, 1.05, .12);
-        this.batch('box', '#789897', n, .63, sign * (half - .7), .12, 1.05, .12);
-      }
-    }
+    // Hard perimeter rails are intentionally gone: WaterWorld now builds walkable sand,
+    // wet shoreline and animated surf around the island.
   }
 
   private buildBuilding(b: Building) {
@@ -346,6 +338,7 @@ export class GameRenderer {
 
   private buildProps() {
     this.world.obstacles.forEach((o, i) => {
+      if (o.assetModel?.startsWith('tree-') || o.assetModel === 'rock-large') return;
       if (o.kind === 'tree') {
         const palm = i % 3 !== 0;
         const radius = Math.max(.13, Math.min(o.width, o.depth) / 2);
@@ -919,6 +912,7 @@ export class GameRenderer {
     for (const node of this.cars.values()) disposeVehicleDamage(node);
     if (this.disposed) return;
     this.disposed = true;
+    this.environmentModels.dispose();
     this.crowd.dispose();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.scene.traverse(o => {

@@ -152,7 +152,8 @@ export class EnvironmentModels {
   }
 
   dispose() {
+    // Keep the root attached until GameRenderer traverses the scene and disposes
+    // the shared GLB geometry/material resources exactly once.
     this.disposed = true;
-    this.root.removeFromParent();
   }
 }
