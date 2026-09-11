@@ -1,11 +1,12 @@
 {
-  "sourceCommit": "f5d4157a1ea341ff3eac0eea200a443ba106ba17",
-  "workflowRun": "34582527834",
-  "sha256": "1f60b2f34a24be0b76fad3bc583078b5a1258391dd977792bf655d35c5922781",
-  "bytes": 1456388,
+  "sourceCommit": "ae04477e0c81e41b50b5e9c0379869bd3b4fb7f1",
+  "workflowRun": "34583852564",
+  "sha256": "73c260899b722bf61dfb1ee16ffacf93f607d999254ab8e1650a6d51fc4c4b16",
+  "bytes": 1599486,
   "package": "com.creepyside11.portside.debug",
   "minimumAndroid": "8.0",
   "buildType": "debug",
   "offline": true,
-  "map": "five-city metro"
+  "map": "five-city metro",
+  "environment": "water + beaches + CC0 houses and trees"
 }
