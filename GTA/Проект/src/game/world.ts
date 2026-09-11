@@ -1,17 +1,23 @@
 import { boxIntersects, circleIntersectsBox } from './collision';
 import { populateStreetFurniture } from './streetFurniture';
-import type { Building, BuildingArchitecture, Solid, World } from './types';
+import type { Building, BuildingArchitecture, Solid, World, WorldDistrict } from './types';
 
 const PALETTE = ['#d6a38b', '#7aaba4', '#e3c89b', '#b8bfc0', '#d18e74', '#8ca9b7', '#c3ac91', '#9fb29c'];
+const LEGACY_SIZE = 284 * Math.SQRT2;
+const LEGACY_ROADS = [-160, -80, 0, 80, 160];
+const METRO_SIZE = 960;
+const METRO_ROADS = [-400, -320, -160, -80, 0, 80, 160, 320, 400];
 
-/** A deterministic city: visuals and simulation share these exact footprints. */
+/** A deterministic metro region: visuals and simulation share these exact footprints. */
 export function createWorld(): World {
+  // Build the original island first so its streets, mission locations and scenery remain unchanged.
   const world: World = {
-    size: 284 * Math.SQRT2,
-    roads: [-160, -80, 0, 80, 160],
+    size: LEGACY_SIZE,
+    roads: [...LEGACY_ROADS],
     roadWidth: 18,
     buildings: [],
     obstacles: [],
+    districts: [{ id: 'portside-core', name: 'PORTSIDE', x: 0, z: 0, width: 410, depth: 410, kind: 'downtown' }],
     pickup: { x: 14, z: 40 },
     destination: { x: 80, z: -58 },
     restricted: { x: -100, z: -110, radius: 14 },
@@ -31,7 +37,7 @@ export function createWorld(): World {
     if (!reserved(building)) world.buildings.push(building);
   };
 
-  // Normalized courtyard arrangements; outer blocks are clipped by the city edge.
+  // Normalized courtyard arrangements; outer blocks are clipped by the original city edge.
   const layouts = [
     [[.24, .34, .36, .50], [.73, .65, .36, .52]],
     [[.31, .25, .52, .32], [.23, .72, .34, .36], [.73, .72, .36, .36]],
@@ -90,7 +96,6 @@ export function createWorld(): World {
       });
     }
   }
-  // Furniture sits beyond the walking routes, with the same solid footprint as its art.
   const furniture = [{ x: 15, z: 60 }, { x: -14.8, z: 32 }, { x: 94.5, z: -51 }, { x: -94.5, z: 55 }];
   furniture.forEach((position, index) => {
     const bench: Solid = { id: `bench-${index}`, kind: 'bench', ...position, yaw: 0, width: .8, depth: 2.2, height: 1.4, color: '#b28a5b' };
@@ -99,14 +104,17 @@ export function createWorld(): World {
       if (![...world.buildings, ...world.obstacles].some(other => boxIntersects(solid, other, .2))) world.obstacles.push(solid);
     }
   });
+
+  // Keep the existing enlarged downtown exactly as it was before growing the regional map.
   populateExpansion(world);
   populateStreetFurniture(world);
+  populateMetroCities(world);
   return world;
 }
 
-/** Extend the city around its original blocks without moving their colliders. */
+/** Extend the original downtown around its first four blocks without moving legacy colliders. */
 function populateExpansion(world: World): void {
-  const edge = world.size / 2;
+  const edge = LEGACY_SIZE / 2;
   const outerLotEnd = edge - 14;
   const outerLotWidth = outerLotEnd - 176;
   const spans: [number, number][] = [
@@ -120,13 +128,11 @@ function populateExpansion(world: World): void {
     const extentX = (Math.abs(Math.cos(solid.yaw)) * solid.width + Math.abs(Math.sin(solid.yaw)) * solid.depth) / 2;
     const extentZ = (Math.abs(Math.sin(solid.yaw)) * solid.width + Math.abs(Math.cos(solid.yaw)) * solid.depth) / 2;
     if (Math.abs(solid.x) + extentX >= edge - 3 || Math.abs(solid.z) + extentZ >= edge - 3) return false;
-    // Keep uninterrupted roads and pedestrian sidewalks through every new block.
-    if (world.roads.some(road => Math.abs(solid.x - road) - extentX < 12.8 || Math.abs(solid.z - road) - extentZ < 12.8)) return false;
+    if (LEGACY_ROADS.some(road => Math.abs(solid.x - road) - extentX < 12.8 || Math.abs(solid.z - road) - extentZ < 12.8)) return false;
     return ![...world.buildings, ...world.obstacles].some(other => boxIntersects(solid, other, .2));
   };
 
   const addBuilding = (x: number, z: number, width: number, depth: number, architecture: BuildingArchitecture, seed: number): void => {
-    // Heights include the complete roof silhouette, shared by art and camera collision.
     const heights: Record<BuildingArchitecture, number> = {
       apartment: 13 + seed % 4 * 2, warehouse: 9 + seed % 3,
       office: 24 + seed % 3 * 3, townhouse: 7 + seed % 4,
@@ -155,8 +161,6 @@ function populateExpansion(world: World): void {
     if (clearLot(obstacle)) world.obstacles.push(obstacle);
   };
 
-  // New avenues have small residential/commercial lots on their outer side and
-  // gardens facing the waterfront promenade. Four civic buildings mark the corners.
   for (let ix = 0; ix < spans.length; ix++) {
     for (let iz = 0; iz < spans.length; iz++) {
       const outerX = ix === 0 || ix === spans.length - 1;
@@ -198,8 +202,6 @@ function populateExpansion(world: World): void {
     }
   }
 
-  // The former city edge becomes a second street frontage, with freight sheds
-  // and office towers on the inside of each new avenue. Old paths at ±131 remain clear.
   for (const axis of ['x', 'z'] as const) {
     for (const sign of [-1, 1]) {
       for (const along of [-40, 40]) {
@@ -214,4 +216,111 @@ function populateExpansion(world: World): void {
       }
     }
   }
+}
+
+/** Grow Portside into a large regional map with four satellite cities and long highway corridors. */
+function populateMetroCities(world: World): void {
+  world.size = METRO_SIZE;
+  world.roads = [...METRO_ROADS];
+  world.districts = [
+    { id: 'portside-core', name: 'PORTSIDE', x: 0, z: 0, width: 410, depth: 410, kind: 'downtown' },
+    { id: 'vice-beach', name: 'VICE BEACH', x: 320, z: 0, width: 250, depth: 370, kind: 'beach' },
+    { id: 'west-harbor', name: 'WEST HARBOR', x: -320, z: 0, width: 250, depth: 370, kind: 'industrial' },
+    { id: 'northside', name: 'NORTHSIDE', x: 0, z: -320, width: 370, depth: 250, kind: 'residential' },
+    { id: 'sunport', name: 'SUNPORT', x: 0, z: 320, width: 370, depth: 250, kind: 'airport' },
+  ];
+
+  // One clear residential block in every satellite city is reserved for local pedestrians.
+  const pedestrianReserves = [
+    { x: 360, z: 40, width: 64, depth: 64, yaw: 0 },
+    { x: -360, z: -40, width: 64, depth: 64, yaw: 0 },
+    { x: -40, z: -360, width: 64, depth: 64, yaw: 0 },
+    { x: 40, z: 360, width: 64, depth: 64, yaw: 0 },
+  ];
+  const edge = METRO_SIZE / 2;
+  let buildingSerial = 0;
+  let propSerial = 0;
+
+  const clearMetro = (solid: Solid): boolean => {
+    const extentX = (Math.abs(Math.cos(solid.yaw)) * solid.width + Math.abs(Math.sin(solid.yaw)) * solid.depth) / 2;
+    const extentZ = (Math.abs(Math.sin(solid.yaw)) * solid.width + Math.abs(Math.cos(solid.yaw)) * solid.depth) / 2;
+    if (Math.abs(solid.x) + extentX >= edge - 10 || Math.abs(solid.z) + extentZ >= edge - 10) return false;
+    if (METRO_ROADS.some(road => Math.abs(solid.x - road) - extentX < 12.8 || Math.abs(solid.z - road) - extentZ < 12.8)) return false;
+    if (pedestrianReserves.some(area => boxIntersects(solid, area, .8))) return false;
+    return ![...world.buildings, ...world.obstacles].some(other => boxIntersects(solid, other, .35));
+  };
+
+  const districtById = (id: string): WorldDistrict => world.districts.find(district => district.id === id)!;
+  const architectureFor = (district: WorldDistrict, seed: number): BuildingArchitecture => {
+    const options: Record<WorldDistrict['kind'], BuildingArchitecture[]> = {
+      downtown: ['office', 'apartment'],
+      beach: ['apartment', 'office', 'townhouse', 'supermarket'],
+      industrial: ['warehouse', 'warehouse', 'office', 'supermarket'],
+      residential: ['townhouse', 'apartment', 'civic', 'supermarket'],
+      airport: ['warehouse', 'office', 'supermarket', 'civic'],
+    };
+    const list = options[district.kind];
+    return list[seed % list.length];
+  };
+
+  const addMetroBuilding = (districtId: string, x: number, z: number, width: number, depth: number, seed: number, label?: string): void => {
+    const district = districtById(districtId);
+    const architecture = architectureFor(district, seed);
+    const heights: Record<BuildingArchitecture, number> = {
+      apartment: 14 + seed % 4 * 2, warehouse: 9 + seed % 3,
+      office: district.kind === 'beach' ? 25 + seed % 4 * 3 : 22 + seed % 3 * 3,
+      townhouse: 7 + seed % 4, supermarket: 6 + seed % 3, civic: 14 + seed % 4 * 2,
+    };
+    const building: Building = {
+      id: `metro-${districtId}-building-${buildingSerial++}`, kind: 'building', x, z,
+      width, depth, height: heights[architecture], yaw: 0,
+      color: PALETTE[(seed + districtId.length) % PALETTE.length], style: seed % 4, architecture,
+      ...(label ? { label } : {}),
+    };
+    if (clearMetro(building)) world.buildings.push(building);
+  };
+
+  const addMetroProp = (districtId: string, x: number, z: number, kind: 'tree' | 'planter' | 'bench' | 'bin', seed: number, yaw = 0): void => {
+    const sizes = { tree: [.85, .85, 5 + seed % 3], planter: [1.8, 2.6, .7], bench: [.8, 2.2, 1.4], bin: [.78, .78, 1.2] };
+    const [width, depth, height] = sizes[kind];
+    const colors = { tree: '#538b72', planter: '#c1ad8d', bench: '#b28a5b', bin: '#507b72' };
+    const prop: Solid = { id: `metro-${districtId}-${kind}-${propSerial++}`, kind, x, z, width, depth, height, yaw, color: colors[kind] };
+    if (clearMetro(prop)) world.obstacles.push(prop);
+  };
+
+  const rows = [-120, -40, 40, 120];
+  rows.forEach((z, row) => {
+    for (const [slot, x] of [215, 265, 360].entries()) addMetroBuilding('vice-beach', x, z, slot === 2 ? 30 : 32, 34, row * 3 + slot,
+      row === 0 && slot === 2 ? 'OCEAN HOTEL' : row === 3 && slot === 0 ? 'NEON PLAZA' : undefined);
+    for (const [slot, x] of [-360, -265, -215].entries()) addMetroBuilding('west-harbor', x, z, slot === 0 ? 32 : 34, 36, 20 + row * 3 + slot,
+      row === 1 && slot === 1 ? 'WEST DOCKS' : row === 3 && slot === 2 ? 'FREIGHT HUB' : undefined);
+  });
+
+  const columns = [-120, -40, 40, 120];
+  columns.forEach((x, column) => {
+    for (const [slot, z] of [-360, -265, -215].entries()) addMetroBuilding('northside', x, z, 36, slot === 0 ? 30 : 32, 40 + column * 3 + slot,
+      column === 0 && slot === 1 ? 'NORTHSIDE' : column === 3 && slot === 2 ? 'CIVIC CENTER' : undefined);
+    for (const [slot, z] of [215, 265, 360].entries()) addMetroBuilding('sunport', x, z, 38, slot === 2 ? 30 : 34, 60 + column * 3 + slot,
+      column === 1 && slot === 1 ? 'SUNPORT' : column === 3 && slot === 0 ? 'AIR CARGO' : undefined);
+  });
+
+  // Each satellite gets its own palms, benches and planted median pockets without filling the highway gaps.
+  const sideSlots = [-140, -100, -60, 20, 100, 140];
+  sideSlots.forEach((along, index) => {
+    const kind = index % 3 === 0 ? 'bench' : index % 3 === 1 ? 'tree' : 'planter';
+    addMetroProp('vice-beach', 292, along, kind, 100 + index, Math.PI / 2);
+    addMetroProp('west-harbor', -292, -along, kind, 110 + index, -Math.PI / 2);
+    addMetroProp('northside', -along, -292, kind, 120 + index, 0);
+    addMetroProp('sunport', along, 292, kind, 130 + index, Math.PI);
+  });
+
+  // Landmark rows make the four satellite skylines readable from the long approaches.
+  addMetroBuilding('vice-beach', 440, -120, 28, 38, 151, 'MARINA');
+  addMetroBuilding('vice-beach', 440, 120, 28, 38, 152, 'BEACH CLUB');
+  addMetroBuilding('west-harbor', -440, -120, 28, 40, 153, 'SHIPYARD');
+  addMetroBuilding('west-harbor', -440, 120, 28, 40, 154, 'CONTAINER CO');
+  addMetroBuilding('northside', -120, -440, 40, 28, 155, 'NORTH MALL');
+  addMetroBuilding('northside', 120, -440, 40, 28, 156, 'ARENA');
+  addMetroBuilding('sunport', -120, 440, 42, 28, 157, 'TERMINAL');
+  addMetroBuilding('sunport', 120, 440, 42, 28, 158, 'AIR FREIGHT');
 }
